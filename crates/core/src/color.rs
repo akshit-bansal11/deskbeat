@@ -81,7 +81,7 @@ pub fn accent_from_bgra(pixels: &[u8], fallback: Rgba) -> Rgba {
     let mut sum = [[0.0f32; 3]; HUE_BUCKETS];
     let step = (pixels.len() / 4 / SAMPLE_TARGET).max(1);
 
-    for px in pixels.chunks_exact(4).step_by(step) {
+    for px in pixels.as_chunks::<4>().0.iter().step_by(step) {
         let (r, g, b) = (
             f32::from(px[2]) / 255.0,
             f32::from(px[1]) / 255.0,
