@@ -14,3 +14,6 @@
 Thumbs.db
 .vscode/
 .idea/
+
+# Local copies of release builds
+/dist/

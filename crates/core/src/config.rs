@@ -292,7 +292,7 @@ impl Default for LyricsCfg {
             size: 30.0,
             weight: 700,
             lines_before: 2,
-            lines_after: 3,
+            lines_after: 2,
             line_gap: 0.55,
             active_color: "text".to_owned(),
             inactive_opacity: 0.38,
