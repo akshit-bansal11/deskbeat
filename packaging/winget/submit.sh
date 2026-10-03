@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Opens the pull request that puts a manifest in the Windows Package Manager, using gh alone.
 #
-#   bash packaging/winget/submit.sh 1.0.1
+#   bash packaging/winget/submit.sh 1.0.0
 #
 # wingetcreate does the same and needs the .NET runtime. Nothing is cloned: winget-pkgs is very large,
 # so the files are written to a fork through the GitHub API.

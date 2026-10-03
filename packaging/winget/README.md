@@ -7,8 +7,8 @@ The files here are a record of what is to be submitted. winget does not read the
 ## Submitting
 
 ```bash
-winget validate --manifest packaging/winget/1.0.1
-bash packaging/winget/submit.sh 1.0.1
+winget validate --manifest packaging/winget/1.0.0
+bash packaging/winget/submit.sh 1.0.0
 ```
 
 `submit.sh` forks `winget-pkgs` if there is no fork yet, writes the three files to a branch of it through the GitHub API, and opens the pull request with `gh`. Nothing is cloned. Microsoft's `wingetcreate` does the same job and is not used here, because it needs the .NET runtime.
