@@ -4,9 +4,9 @@
 
 Desktop widgets for Spotify on Windows 11, in one small native app: a spectrum visualizer, synced lyrics, a clock, and a now-playing player.
 
-<p align="center"><img src="assets/preview.png" width="880" alt="A desktop with a clock top left, a now-playing card below it, lyrics on the right with the current line lit, and a spectrum along the bottom edge"></p>
+<p align="center"><img src="assets/demo.gif" width="880" alt="A desktop while a song plays: a spectrum moving along the top edge, lyrics on the left lighting up line by line, and the day, a progress bar, the track title and playback buttons at the bottom"></p>
 
-<p align="center"><sub>All four widgets, drawn by the app's own snapshot mode from made-up data.</sub></p>
+<p align="center"><sub>Deskbeat on a real desktop, with Spotify playing.</sub></p>
 
 [![CI](https://github.com/akshit-bansal11/deskbeat/actions/workflows/ci.yml/badge.svg)](https://github.com/akshit-bansal11/deskbeat/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/akshit-bansal11/deskbeat)](https://github.com/akshit-bansal11/deskbeat/releases/latest)

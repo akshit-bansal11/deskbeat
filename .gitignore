@@ -17,3 +17,6 @@ Thumbs.db
 
 # Local copies of release builds
 /dist/
+
+# Screen recordings the demo GIF is cut from. Too large for the repo.
+/assets/*.mp4
