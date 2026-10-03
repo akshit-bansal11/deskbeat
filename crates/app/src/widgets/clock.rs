@@ -1,21 +1,19 @@
-//! Day, time and date.
+//! Day, time and date, each placed on its own.
 
 use sonic_veil_core::color::with_alpha;
 use sonic_veil_core::config::ClockRow;
 use sonic_veil_core::timefmt::{format, shows_seconds};
 use windows::core::Result;
 
-use super::{Ctx, Tick, Wake, Widget, draw_card};
-use crate::gfx::{Gfx, TextStyle};
-
-/// The time row's line box is much taller than its digits; this fraction of
-/// it is kept so the day and date sit close to the numbers.
-const TIME_ROW_TIGHTEN: f32 = 0.84;
+use super::{Ctx, Part, Tick, Wake, Widget, draw_card, place_text};
+use crate::gfx::Gfx;
 
 #[derive(Default)]
 pub struct Clock {
     /// Day, time and date as currently drawn.
     shown: [String; 3],
+    /// Every row drawn last time, for dragging in edit mode.
+    parts: Vec<Part>,
 }
 
 impl Widget for Clock {
@@ -45,17 +43,20 @@ impl Widget for Clock {
         }
     }
 
+    fn parts(&self) -> &[Part] {
+        &self.parts
+    }
+
     fn draw(&mut self, g: &mut Gfx, w: f32, h: f32, ctx: &Ctx) -> Result<()> {
         let c = &ctx.cfg.clock;
         let theme = &ctx.cfg.theme;
         if c.card {
             draw_card(g, w, h, ctx, c.opacity);
         }
-        let pad = if c.card { 26.0 } else { 4.0 };
 
         // A font that is missing would be substituted by something unrelated;
         // the theme font is the better stand-in.
-        let pick = |wanted: &'_ str| -> String {
+        let pick = |wanted: &str| -> String {
             if !wanted.is_empty() && g.has_font(wanted) {
                 wanted.to_owned()
             } else {
@@ -63,73 +64,47 @@ impl Widget for Clock {
             }
         };
         let (day_font, time_font) = (pick(&c.day_font), pick(&c.time_font));
+        let shadow = theme.text_shadow && !c.card;
 
-        // Text, font, size, weight, colour, letter spacing, fraction of the row height kept.
-        let spec = |row: ClockRow| match row {
-            ClockRow::Day => c.show_day.then_some((
-                &self.shown[0],
-                &day_font,
-                c.day_size,
-                600,
-                with_alpha(ctx.accent, c.opacity),
-                c.day_size * 0.16,
-                1.0,
-            )),
-            ClockRow::Time => c.show_time.then_some((
-                &self.shown[1],
-                &time_font,
-                c.time_size,
-                c.time_weight,
-                with_alpha(ctx.text, c.opacity),
-                0.0,
-                TIME_ROW_TIGHTEN,
-            )),
-            ClockRow::Date => c.show_date.then_some((
-                &self.shown[2],
-                &time_font,
-                c.text_size,
-                400,
-                with_alpha(ctx.text, 0.74 * c.opacity),
-                0.0,
-                1.0,
-            )),
-        };
-
-        let mut rows = Vec::with_capacity(3);
-        let mut total = 0.0;
-        for (text, font, size, weight, color, spacing, keep) in
-            c.order.iter().filter_map(|&row| spec(row))
-        {
-            if text.is_empty() {
+        self.parts.clear();
+        for row in ClockRow::ALL {
+            // Shown, font, size, weight, colour, letter spacing, position.
+            let (shown, font, size, weight, color, spacing, spot) = match row {
+                ClockRow::Day => (
+                    c.show_day,
+                    &day_font,
+                    c.day_size,
+                    600,
+                    with_alpha(ctx.accent, c.opacity),
+                    c.day_size * 0.16,
+                    &c.day,
+                ),
+                ClockRow::Time => (
+                    c.show_time,
+                    &time_font,
+                    c.time_size,
+                    c.time_weight,
+                    with_alpha(ctx.text, c.opacity),
+                    0.0,
+                    &c.time,
+                ),
+                ClockRow::Date => (
+                    c.show_date,
+                    &time_font,
+                    c.text_size,
+                    400,
+                    with_alpha(ctx.text, 0.74 * c.opacity),
+                    0.0,
+                    &c.date,
+                ),
+            };
+            let text = &self.shown[row as usize];
+            if !shown || text.is_empty() {
                 continue;
             }
-            let style = TextStyle {
-                font,
-                size,
-                weight,
-                align: c.align,
-                wrap: false,
-            };
-            let layout = g.layout(text, &style, w - 2.0 * pad, h)?;
-            if spacing > 0.0 {
-                Gfx::letter_space(&layout, text.encode_utf16().count() as u32, spacing)?;
-            }
-            let height = Gfx::measure(&layout).1;
-            total += height * keep;
-            rows.push((layout, height, keep, color));
-        }
-
-        let mut y = (h - total) / 2.0;
-        for (layout, height, keep, color) in rows {
-            let trimmed = height * (1.0 - keep);
-            g.draw_text(
-                &layout,
-                pad,
-                y - trimmed / 2.0,
-                color,
-                theme.text_shadow && !c.card,
-            );
-            y += height * keep;
+            let placed = place_text(g, text, (font.as_str(), size, weight), spot, w, spacing)?;
+            g.draw_text(&placed.layout, placed.x, spot.y, color, shadow);
+            self.parts.push((row as u8, placed.rect));
         }
         Ok(())
     }

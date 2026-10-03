@@ -155,13 +155,13 @@ pub fn run(dir: &Path) -> Result<()> {
     variant.visualizer.symmetric = true;
     variant.visualizer.card = true;
     variant.visualizer.flip_x = true;
-    variant.clock.order.reverse();
-    variant.player.order.swap(0, 1);
+    // The date moved above the time and the day beside it.
+    variant.clock.date.y = 8.0;
+    variant.clock.day = sonic_veil_core::config::Spot::at(250.0, 150.0);
     variant.lyrics.inactive_color = "accent".to_owned();
     variant.lyrics.word_color = "#F9F871".to_owned();
     variant.lyrics.stroke_width = 2.0;
-    variant.player.layout = PlayerLayout::Centered;
-    (variant.player.frame.w, variant.player.frame.h) = (260, 400);
+    variant.player.arrange(PlayerLayout::Centered);
     variant.clock.time_format = "%l:%M %p".to_owned();
     looks.push(("word-wave".to_owned(), variant, false));
     looks.push(("edit-mode".to_owned(), Config::default(), true));
@@ -285,7 +285,7 @@ fn scene(
         gfx.set_transform(1.0, x as f32, y as f32);
         widget.draw(gfx, w, h, &ctx)?;
         if edit {
-            draw_edit_frame(gfx, kind, w, h, &ctx)?;
+            draw_edit_frame(gfx, kind, w, h, &ctx, widget.parts())?;
         }
     }
     Ok(())

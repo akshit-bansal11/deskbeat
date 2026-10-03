@@ -84,6 +84,9 @@ thread_local! {
     static EDIT: Cell<bool> = const { Cell::new(false) };
     static PIN_BOTTOM: Cell<bool> = const { Cell::new(false) };
     static TASKBAR_CREATED: Cell<u32> = const { Cell::new(0) };
+    /// Boxes, in each widget window's own pixels, that take the mouse in
+    /// edit mode instead of moving the whole window.
+    static PARTS: RefCell<Vec<(isize, RECT)>> = const { RefCell::new(Vec::new()) };
 }
 
 fn push(event: Event) {
@@ -98,6 +101,24 @@ pub fn next_event() -> Option<Event> {
 /// borders, so Windows itself moves and sizes them.
 pub fn set_edit_mode(on: bool) {
     EDIT.set(on);
+}
+
+/// Replaces the draggable boxes of one widget window.
+pub fn set_parts(hwnd: HWND, boxes: &[RECT]) {
+    let key = hwnd.0 as isize;
+    PARTS.with_borrow_mut(|parts| {
+        parts.retain(|(owner, _)| *owner != key);
+        parts.extend(boxes.iter().map(|r| (key, *r)));
+    });
+}
+
+fn on_part(hwnd: HWND, x: i32, y: i32) -> bool {
+    let key = hwnd.0 as isize;
+    PARTS.with_borrow(|parts| {
+        parts.iter().any(|(owner, r)| {
+            *owner == key && x >= r.left && x < r.right && y >= r.top && y < r.bottom
+        })
+    })
 }
 
 /// While set, widget windows refuse to leave the bottom of the z-order.
@@ -129,6 +150,9 @@ fn edit_hit_test(hwnd: HWND, (x, y): (i32, i32)) -> u32 {
         (_, true, ..) => HTRIGHT,
         (_, _, true, _) => HTTOP,
         (_, _, _, true) => HTBOTTOM,
+        // An element of the widget: the app drags that alone.
+        _ if on_part(hwnd, x - r.left, y - r.top) => HTCLIENT,
+        // Anywhere else moves the whole widget.
         _ => HTCAPTION,
     }
 }

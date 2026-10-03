@@ -14,7 +14,9 @@ use sonic_veil_core::color::{Rgba, parse_hex, with_alpha};
 use sonic_veil_core::config::{Align, Config, Layer, Preset};
 use sonic_veil_core::lrclib::Query;
 use sonic_veil_core::timefmt::LocalTime;
-use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, WAIT_OBJECT_0};
+use windows::Win32::Foundation::{
+    ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, RECT, WAIT_OBJECT_0,
+};
 use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::Storage::FileSystem::{
     FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_NOTIFY_CHANGE_SIZE,
@@ -37,7 +39,7 @@ use crate::lyrics::{self, Lyrics, LyricsState};
 use crate::media::{self, Cmd, MediaState};
 use crate::settings::Panel;
 use crate::tray::{Item, Tray};
-use crate::widgets::{Action, Ctx, Kind, Wake, Widget};
+use crate::widgets::{Action, Ctx, Kind, Part, Wake, Widget};
 use crate::window::{self, Cover, Event, Mouse, Z};
 use crate::{Notify, config_dir, log, now_ms};
 
@@ -187,6 +189,9 @@ struct App {
     desktop_recheck_at: Option<f64>,
     device_lost: bool,
     quit: bool,
+    /// The element being dragged in edit mode: its widget, its id, and where
+    /// the pointer last was.
+    drag: Option<(usize, u8, f32, f32)>,
 }
 
 fn read_config(path: &Path) -> (Config, String, bool) {
@@ -295,6 +300,7 @@ pub fn run() -> Result<()> {
         desktop_recheck_at: None,
         device_lost: false,
         quit: false,
+        drag: None,
     };
 
     for kind in Kind::ALL {
@@ -437,6 +443,22 @@ impl App {
                 if let Err(error) = draw_host(&mut self.gfx, host, &ctx, self.scale, self.edit) {
                     log(&format!("drawing {} failed: {error}", host.kind.label()));
                     self.device_lost = true;
+                }
+                if self.edit {
+                    // Tell the window which boxes are elements to drag.
+                    let px = |dip: f32| (dip * self.scale).round() as i32;
+                    let boxes: Vec<RECT> = host
+                        .widget
+                        .parts()
+                        .iter()
+                        .map(|(_, r)| RECT {
+                            left: px(r.left),
+                            top: px(r.top),
+                            right: px(r.right),
+                            bottom: px(r.bottom),
+                        })
+                        .collect();
+                    window::set_parts(host.hwnd, &boxes);
                 }
             }
             wake = wake.sooner(match host.due {
@@ -635,6 +657,7 @@ impl App {
             return;
         };
         if self.edit {
+            self.drag_part(index, kind, x as f32 / self.scale, y as f32 / self.scale);
             return;
         }
         let host = &mut self.hosts[index];
@@ -661,6 +684,47 @@ impl App {
                 .send(Cmd::SeekMs(fraction * self.media.duration_ms)),
             None => Ok(()),
         };
+    }
+
+    /// Edit mode: moves one element of a widget with the pointer.
+    fn drag_part(&mut self, index: usize, kind: Mouse, x: f32, y: f32) {
+        match kind {
+            Mouse::Down => {
+                // The last one drawn is on top, so it wins where two overlap.
+                let grabbed = self.hosts[index]
+                    .widget
+                    .parts()
+                    .iter()
+                    .rev()
+                    .find(|(_, r)| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+                    .map(|(id, _)| *id);
+                self.drag = grabbed.map(|id| (index, id, x, y));
+            }
+            Mouse::Move => {
+                let Some((host, id, last_x, last_y)) = self.drag else {
+                    return;
+                };
+                if host != index {
+                    return;
+                }
+                if let Some(spot) = self.hosts[index].kind.spot_mut(&mut self.cfg, id) {
+                    spot.x += x - last_x;
+                    spot.y += y - last_y;
+                }
+                self.drag = Some((host, id, x, y));
+                self.hosts[index].dirty = true;
+            }
+            Mouse::Up => {
+                if self.drag.take().is_some() {
+                    self.cfg = self.cfg.clone().sanitized();
+                    self.save_config();
+                    if let Some(panel) = &mut self.settings {
+                        panel.dirty = true;
+                    }
+                }
+            }
+            Mouse::Leave => {}
+        }
     }
 
     fn widget_moved(&mut self, hwnd: HWND) {
@@ -821,6 +885,12 @@ impl App {
     fn toggle_edit(&mut self) {
         self.edit = !self.edit;
         self.raised = false;
+        self.drag = None;
+        if !self.edit {
+            for host in &self.hosts {
+                window::set_parts(host.hwnd, &[]);
+            }
+        }
         if self.edit {
             self.hidden = false;
         }
@@ -1034,7 +1104,7 @@ fn draw_host(gfx: &mut Gfx, host: &mut Host, ctx: &Ctx, scale: f32, edit: bool) 
     gfx.set_transform(scale, 0.0, 0.0);
     let drawn = host.widget.draw(gfx, w, h, ctx);
     let framed = if edit {
-        draw_edit_frame(gfx, host.kind, w, h, ctx)
+        draw_edit_frame(gfx, host.kind, w, h, ctx, host.widget.parts())
     } else {
         Ok(())
     };
@@ -1042,7 +1112,18 @@ fn draw_host(gfx: &mut Gfx, host: &mut Host, ctx: &Ctx, scale: f32, edit: bool) 
 }
 
 /// The outline and label shown while the layout is being edited.
-pub fn draw_edit_frame(gfx: &mut Gfx, kind: Kind, w: f32, h: f32, ctx: &Ctx) -> Result<()> {
+pub fn draw_edit_frame(
+    gfx: &mut Gfx,
+    kind: Kind,
+    w: f32,
+    h: f32,
+    ctx: &Ctx,
+    parts: &[Part],
+) -> Result<()> {
+    // Each element that can be dragged on its own gets a box of its own.
+    for (_, r) in parts {
+        gfx.stroke_round(*r, 3.0, with_alpha(ctx.accent, 0.75), 1.0);
+    }
     let radius = ctx.cfg.theme.card_radius.min(w.min(h) / 2.0);
     gfx.fill_round(rect(0.0, 0.0, w, h), radius, with_alpha(ctx.accent, 0.10));
     gfx.stroke_round(rect(1.0, 1.0, w - 2.0, h - 2.0), radius, ctx.accent, 2.0);

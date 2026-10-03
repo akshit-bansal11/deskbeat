@@ -8,12 +8,14 @@ pub mod visualizer;
 use std::time::Duration;
 
 use sonic_veil_core::color::{Rgba, with_alpha};
-use sonic_veil_core::config::{Config, Frame};
+use sonic_veil_core::config::{Align, ClockRow, Config, Frame, PlayerPart, Spot};
 use sonic_veil_core::timefmt::LocalTime;
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
+use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 use windows::core::Result;
 
 use crate::capture::Audio;
-use crate::gfx::{Gfx, rect};
+use crate::gfx::{Gfx, TextStyle, rect};
 use crate::lyrics::Lyrics;
 use crate::media::MediaState;
 
@@ -84,6 +86,12 @@ pub trait Widget {
 
     /// Drops everything derived from the config or the graphics device.
     fn reset(&mut self) {}
+
+    /// The separately placed elements drawn last time. In edit mode each
+    /// can be dragged on its own.
+    fn parts(&self) -> &[Part] {
+        &[]
+    }
 
     /// The pointer moved to `at`, or left. Returns whether to redraw.
     fn hover(&mut self, _at: Option<(f32, f32)>) -> bool {
@@ -161,6 +169,20 @@ impl Kind {
         }
     }
 
+    /// The position of one of the widget's own elements, by the id it
+    /// reported in `Widget::parts`.
+    pub fn spot_mut(self, cfg: &mut Config, id: u8) -> Option<&mut Spot> {
+        match self {
+            Kind::Clock => ClockRow::ALL
+                .get(id as usize)
+                .map(|&row| cfg.clock.spot_mut(row)),
+            Kind::Player => PlayerPart::ALL
+                .get(id as usize)
+                .map(|&part| cfg.player.spot_mut(part)),
+            Kind::Lyrics | Kind::Visualizer => None,
+        }
+    }
+
     /// Widgets with nothing to show while Spotify is closed.
     pub fn needs_spotify(self) -> bool {
         self != Kind::Clock
@@ -189,6 +211,68 @@ pub fn draw_card(g: &Gfx, w: f32, h: f32, ctx: &Ctx, opacity: f32) {
             1.0,
         );
     }
+}
+
+/// An element's id within its widget, and the box it was drawn in.
+pub type Part = (u8, D2D_RECT_F);
+
+pub fn contains(r: &D2D_RECT_F, x: f32, y: f32) -> bool {
+    x >= r.left && x < r.right && y >= r.top && y < r.bottom
+}
+
+/// A line of text laid out at a [`Spot`].
+pub struct Placed {
+    pub layout: IDWriteTextLayout,
+    /// Where to draw the layout so the text lands on the spot.
+    pub x: f32,
+    /// The box the text itself covers.
+    pub rect: D2D_RECT_F,
+}
+
+/// The narrowest a line is ever squeezed to before it is cut with an ellipsis.
+const MIN_TEXT_WIDTH: f32 = 60.0;
+
+/// Lays out one line of text at `spot` inside a widget `canvas_w` wide.
+/// `face` is the font family, size and weight. The text runs from the spot
+/// toward the far edge of the widget and is cut with an ellipsis there.
+pub fn place_text(
+    g: &mut Gfx,
+    text: &str,
+    (font, size, weight): (&str, f32, u32),
+    spot: &Spot,
+    canvas_w: f32,
+    spacing: f32,
+) -> Result<Placed> {
+    let room = match spot.align {
+        Align::Left => canvas_w - spot.x,
+        Align::Right => spot.x,
+        Align::Center => 2.0 * spot.x.min(canvas_w - spot.x),
+    }
+    .max(MIN_TEXT_WIDTH);
+    let style = TextStyle {
+        font,
+        size,
+        weight,
+        align: spot.align,
+        wrap: false,
+    };
+    let layout = g.layout(text, &style, room, 10_000.0)?;
+    if spacing > 0.0 {
+        Gfx::letter_space(&layout, text.encode_utf16().count() as u32, spacing)?;
+    }
+    let (text_w, text_h) = Gfx::measure(&layout);
+    let text_w = text_w.min(room);
+    // How far left of the spot the layout box, and the text in it, begin.
+    let (box_back, text_back) = match spot.align {
+        Align::Left => (0.0, 0.0),
+        Align::Right => (room, text_w),
+        Align::Center => (room / 2.0, text_w / 2.0),
+    };
+    Ok(Placed {
+        layout,
+        x: spot.x - box_back,
+        rect: rect(spot.x - text_back, spot.y, text_w, text_h),
+    })
 }
 
 /// `m:ss`, for track positions.

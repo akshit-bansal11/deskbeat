@@ -93,17 +93,6 @@ const ANCHORS: [(Anchor, &str); 9] = [
     (Anchor::Bottom, "Bottom"),
     (Anchor::BottomRight, "Bottom right"),
 ];
-const CLOCK_ROWS: [(ClockRow, &str); 3] = [
-    (ClockRow::Day, "Day"),
-    (ClockRow::Time, "Time"),
-    (ClockRow::Date, "Date"),
-];
-const PLAYER_PARTS: [(PlayerPart, &str); 4] = [
-    (PlayerPart::Art, "Album art"),
-    (PlayerPart::Text, "Title and artist"),
-    (PlayerPart::Controls, "Buttons"),
-    (PlayerPart::Progress, "Progress"),
-];
 /// Colours a lyric setting can follow by name, ahead of the swatches.
 const THEME_COLORS: [(&str, &str); 2] = [("text", "Text"), ("accent", "Accent")];
 const ALIGNS: [(Align, &str); 3] = [
@@ -687,20 +676,23 @@ impl Ui<'_> {
         Ok(())
     }
 
-    /// One stepper per position. Picking an item for a position swaps it
-    /// with whatever was there, so the list always holds each item once.
-    fn order<T: Copy + PartialEq>(
-        &mut self,
-        slots: &[&str],
-        order: &mut [T],
-        options: &[(T, &str)],
-    ) -> Result<()> {
-        for (slot, label) in slots.iter().enumerate().take(order.len()) {
-            let mut item = order[slot];
-            self.choice(label, &mut item, options)?;
-            place(order, slot, item);
-        }
-        Ok(())
+    /// A labelled row with one button. Returns whether it was clicked.
+    fn action(&mut self, label: &str, button: &str) -> Result<bool> {
+        let (_, control) = self.row(label, ROW)?;
+        let pill = rect(
+            control.left,
+            control.top + 5.0,
+            control.right - control.left,
+            ROW - 10.0,
+        );
+        self.button(button, pill, false)
+    }
+
+    /// A line of small print.
+    fn note(&mut self, text: &str) -> Result<()> {
+        let line = rect(self.left, self.y, self.width, 22.0);
+        self.y += 26.0;
+        self.text(text, line, 12.0, 400, Align::Left, DIM)
     }
 
     /// The rows every widget shares: where it sits and how solid it is.
@@ -778,13 +770,23 @@ fn clock(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     let c = &mut cfg.clock;
     ui.toggle("Show", &mut c.enabled)?;
     ui.toggle("Card behind it", &mut c.card)?;
-    ui.choice("Align", &mut c.align, &ALIGNS)?;
 
     ui.header("Rows")?;
+    ui.note("In Edit layout, drag the day, time and date separately.")?;
     ui.toggle("Show the day", &mut c.show_day)?;
     ui.toggle("Show the time", &mut c.show_time)?;
     ui.toggle("Show the date", &mut c.show_date)?;
-    ui.order(&["Top", "Middle", "Bottom"], &mut c.order, &CLOCK_ROWS)?;
+    let mut align = c.time.align;
+    ui.choice("Text grows from its", &mut align, &ALIGNS)?;
+    if align != c.time.align {
+        for row in ClockRow::ALL {
+            c.spot_mut(row).align = align;
+        }
+    }
+    if ui.action("Positions", "Reset")? {
+        c.reset_spots();
+        ui.changed = true;
+    }
 
     ui.header("Text")?;
     ui.choice_text("Time", &mut c.time_format, &TIME_FORMATS)?;
@@ -803,22 +805,6 @@ fn player(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.header("Player")?;
     let p = &mut cfg.player;
     ui.toggle("Show", &mut p.enabled)?;
-    let before = p.layout;
-    ui.choice(
-        "Layout",
-        &mut p.layout,
-        &[
-            (PlayerLayout::Row, "Art on the left"),
-            (PlayerLayout::Centered, "Centred stack"),
-        ],
-    )?;
-    if p.layout != before {
-        // Each layout needs a differently shaped box to look right.
-        (p.frame.w, p.frame.h) = match p.layout {
-            PlayerLayout::Row => (420, 132),
-            PlayerLayout::Centered => (260, 400),
-        };
-    }
     ui.choice(
         "Background",
         &mut p.background,
@@ -832,12 +818,19 @@ fn player(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.toggle("Progress bar", &mut p.show_progress)?;
     ui.toggle("Buttons", &mut p.show_controls)?;
 
-    ui.header("Order, top to bottom")?;
-    ui.order(
-        &["First", "Second", "Third", "Fourth"],
-        &mut p.order,
-        &PLAYER_PARTS,
-    )?;
+    ui.header("Arrangement")?;
+    ui.note("In Edit layout, drag any element on its own.")?;
+    for (layout, label) in [
+        (PlayerLayout::Row, "Art on the left"),
+        (PlayerLayout::Centered, "Centred stack"),
+    ] {
+        if ui.action(label, "Arrange")? {
+            p.arrange(layout);
+            ui.changed = true;
+        }
+    }
+    ui.slider("Album art size", &mut p.art_size, 16.0, 600.0, 2.0)?;
+    ui.slider("Progress bar length", &mut p.bar_width, 20.0, 1200.0, 2.0)?;
 
     ui.header("Text")?;
     ui.slider("Title size", &mut p.title_size, 10.0, 48.0, 1.0)?;
