@@ -10,7 +10,7 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 - A new mark: four sound bars, centred like a waveform, that draw the letter
   D. The README shows a recording of the app instead of a rendered still.
-  The tray icon still uses the old three bars.
+  The tray icon shows the same mark.
 
 ## [1.0.1] - 2026-10-03
 

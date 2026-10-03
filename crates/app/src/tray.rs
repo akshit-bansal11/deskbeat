@@ -14,33 +14,47 @@ use crate::window::WM_APP_TRAY;
 const ICON_SIDE: usize = 32;
 const TIP: &str = "Deskbeat: double-click for settings";
 
-/// Three rounded bars on a violet tile, drawn into premultiplied BGRA. Made
-/// in code so the exe needs no resource file.
+/// The tile's colours, top-left and bottom-right, as in `assets/deskbeat-light.svg`.
+const TILE_FROM: [f32; 3] = [109.0, 59.0, 255.0];
+const TILE_TO: [f32; 3] = [255.0, 61.0, 139.0];
+/// Each bar's centre line and height. Their heights fall away to draw a D.
+const BARS: [(f32, f32); 4] = [(7.9, 20.8), (13.4, 19.0), (18.8, 14.8), (24.2, 7.8)];
+const BAR_HALF_WIDTH: f32 = 1.9;
+
+/// The Deskbeat mark, drawn into premultiplied BGRA: four white bars centred
+/// like a waveform on a violet-to-pink tile. Made in code so the exe needs
+/// no resource file.
 fn icon_pixels() -> Vec<u8> {
     let side = ICON_SIDE as f32;
+    let middle = side / 2.0;
     let mut pixels = vec![0u8; ICON_SIDE * ICON_SIDE * 4];
-    let bars = [(8.0, 14.0), (14.5, 7.0), (21.0, 17.0)];
     for (i, px) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let (x, y) = ((i % ICON_SIDE) as f32 + 0.5, (i / ICON_SIDE) as f32 + 0.5);
         // Rounded-square tile: distance outside a square inset by the corner radius.
-        let radius = 7.0;
-        let dx = (x - side / 2.0).abs() - (side / 2.0 - radius);
-        let dy = (y - side / 2.0).abs() - (side / 2.0 - radius);
+        let radius = 7.7;
+        let dx = (x - middle).abs() - (middle - radius);
+        let dy = (y - middle).abs() - (middle - radius);
         let outside = dx.max(0.0).hypot(dy.max(0.0)) - radius;
         let alpha = (0.5 - outside).clamp(0.0, 1.0);
-        let on_bar = bars
+        // How much of the pixel a bar covers: each is a capsule, so its ends are round.
+        let white = BARS
             .iter()
-            .any(|&(left, top)| x >= left && x < left + 3.5 && y >= top && y < 25.0);
-        let (r, g, b) = if on_bar {
-            (255.0, 255.0, 255.0)
-        } else {
-            (124.0, 92.0, 255.0)
+            .map(|&(centre, height)| {
+                let along = ((y - middle).abs() - (height / 2.0 - BAR_HALF_WIDTH)).max(0.0);
+                (0.5 - ((x - centre).hypot(along) - BAR_HALF_WIDTH)).clamp(0.0, 1.0)
+            })
+            .fold(0.0, f32::max);
+        let across = (x + y) / (2.0 * side);
+        let channel = |i: usize| {
+            let tile = TILE_FROM[i] + (TILE_TO[i] - TILE_FROM[i]) * across;
+            tile + (255.0 - tile) * white
         };
+        let (r, g, b) = (channel(0), channel(1), channel(2));
         *px = [
-            (b * alpha) as u8,
-            (g * alpha) as u8,
-            (r * alpha) as u8,
-            (255.0 * alpha) as u8,
+            (b * alpha).round() as u8,
+            (g * alpha).round() as u8,
+            (r * alpha).round() as u8,
+            (255.0 * alpha).round() as u8,
         ];
     }
     pixels
@@ -114,11 +128,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_icon_has_a_solid_tile_transparent_corners_and_white_bars() {
+    fn the_icon_has_a_gradient_tile_transparent_corners_and_white_bars() {
         let pixels = icon_pixels();
+        // Blue, green, red, alpha.
         let at = |x: usize, y: usize| &pixels[(y * ICON_SIDE + x) * 4..][..4];
         assert_eq!(at(0, 0)[3], 0, "the corner is cut off");
-        assert_eq!(at(16, 28), [255, 92, 124, 255], "the tile is violet");
-        assert_eq!(at(15, 20), [255, 255, 255, 255], "the middle bar is white");
+        let (left, right) = (at(2, 16), at(29, 16));
+        assert_eq!((left[3], right[3]), (255, 255), "the tile is solid");
+        assert!(left[0] > left[2], "violet on the left: {left:?}");
+        assert!(right[2] > right[0], "pink on the right: {right:?}");
+        assert_eq!(at(13, 16), [255, 255, 255, 255], "a bar is white");
+        assert_eq!(at(7, 8), [255, 255, 255, 255], "the first bar is tall");
+        assert_ne!(at(24, 8), [255, 255, 255, 255], "the last bar is short");
     }
 }
