@@ -22,8 +22,8 @@ use crate::gfx::{Gfx, Surface, TextStyle, rect};
 use crate::widgets::Kind;
 use crate::window::{self, Mouse};
 
-const WIDTH: f32 = 470.0;
-const HEIGHT: f32 = 680.0;
+pub const WIDTH: f32 = 470.0;
+pub const HEIGHT: f32 = 680.0;
 const MARGIN: f32 = 22.0;
 const TABS_HEIGHT: f32 = 52.0;
 const FOOTER_HEIGHT: f32 = 64.0;
@@ -38,7 +38,7 @@ const TEXT: Rgba = [1.0, 1.0, 1.0, 0.92];
 const DIM: Rgba = [1.0, 1.0, 1.0, 0.56];
 const TRACK: Rgba = [1.0, 1.0, 1.0, 0.14];
 
-const TABS: [&str; 5] = ["General", "Clock", "Player", "Lyrics", "Visualizer"];
+pub const TABS: [&str; 5] = ["General", "Clock", "Player", "Lyrics", "Visualizer"];
 const SWATCHES: [&str; 10] = [
     "#FFFFFF", "#1ED760", "#7C5CFF", "#21D4FD", "#FF3DCB", "#FF6B6B", "#FFB547", "#F9F871",
     "#101014", "#000000",
@@ -95,21 +95,149 @@ pub struct Outcome {
     pub changed: bool,
     pub toggle_edit: bool,
     pub open_config: bool,
+    /// This pass changed something the next pass has to show.
+    pub redraw: bool,
 }
 
-pub struct Panel {
-    pub hwnd: HWND,
-    surface: Surface,
-    size: (u32, u32),
+/// The panel's contents and pointer state, apart from any window, so the
+/// same code paints the real panel and the offscreen snapshot of it.
+pub struct View {
     tab: usize,
     scroll: f32,
     mouse: (f32, f32),
     down: bool,
-    /// The button went down, or came up, since the last draw.
+    /// The button went down, or came up, since the last paint.
     pressed: bool,
     released: bool,
     /// The slider being dragged.
     active: Option<u32>,
+}
+
+impl Default for View {
+    fn default() -> Self {
+        Self {
+            tab: 0,
+            scroll: 0.0,
+            // Off the panel, so nothing starts out hovered.
+            mouse: (-1.0, -1.0),
+            down: false,
+            pressed: false,
+            released: false,
+            active: None,
+        }
+    }
+}
+
+impl View {
+    /// A view opened on one tab, with the pointer off the panel.
+    pub fn on_tab(tab: usize) -> Self {
+        Self {
+            tab,
+            ..Self::default()
+        }
+    }
+
+    /// Paints a `w` by `h` panel at the origin and applies whatever the
+    /// pointer did to `cfg`. `area` is the work area in display-independent
+    /// pixels. The caller owns the frame: this neither begins nor ends it.
+    pub fn paint(
+        &mut self,
+        gfx: &mut Gfx,
+        cfg: &mut Config,
+        (w, h): (f32, f32),
+        accent: Rgba,
+        edit: bool,
+        area: (i32, i32),
+    ) -> Result<Outcome> {
+        let mut outcome = Outcome::default();
+        let font = cfg.theme.font.clone();
+        gfx.fill_rect(rect(0.0, 0.0, w, h), BACKGROUND);
+
+        let view = (TABS_HEIGHT, h - FOOTER_HEIGHT);
+        let mut ui = Ui {
+            g: &mut *gfx,
+            font: &font,
+            accent,
+            left: MARGIN,
+            width: w - 2.0 * MARGIN,
+            y: TABS_HEIGHT + 6.0 - self.scroll,
+            mouse: self.mouse,
+            pressed: self.pressed,
+            down: self.down,
+            released: self.released,
+            active: &mut self.active,
+            next_id: 0,
+            changed: false,
+            view,
+            area,
+        };
+        // The pointer's edges are consumed by this pass whatever happens next.
+        self.pressed = false;
+        self.released = false;
+
+        // The clip is always popped, even if a row failed to draw: an
+        // unbalanced clip would fail the whole frame.
+        ui.g.push_clip(rect(0.0, view.0, w, view.1 - view.0));
+        let built = match self.tab {
+            0 => general(&mut ui, cfg),
+            1 => clock(&mut ui, cfg),
+            2 => player(&mut ui, cfg),
+            3 => lyrics(&mut ui, cfg),
+            _ => visualizer(&mut ui, cfg),
+        };
+        ui.g.pop_clip();
+        built?;
+        let content_height = ui.y + self.scroll - TABS_HEIGHT + 12.0;
+
+        // Tabs and footer sit outside the scrolling area.
+        ui.view = (0.0, h);
+        let tab_width = w / TABS.len() as f32;
+        for (i, name) in TABS.iter().enumerate() {
+            let cell = rect(tab_width * i as f32, 0.0, tab_width, TABS_HEIGHT - 8.0);
+            let selected = self.tab == i;
+            if ui.clicked(cell) && !selected {
+                self.tab = i;
+                self.scroll = 0.0;
+                outcome.redraw = true;
+            }
+            let color = if selected { TEXT } else { DIM };
+            let weight = if selected { 600 } else { 400 };
+            ui.text(name, cell, 13.0, weight, Align::Center, color)?;
+            if selected {
+                ui.g.fill_rect(
+                    rect(cell.left + 14.0, cell.bottom - 2.0, tab_width - 28.0, 2.0),
+                    accent,
+                );
+            }
+        }
+        ui.g.fill_rect(rect(0.0, TABS_HEIGHT - 8.0, w, 1.0), TRACK);
+
+        let footer = h - FOOTER_HEIGHT;
+        ui.g.fill_rect(rect(0.0, footer, w, 1.0), TRACK);
+        let half = (w - 2.0 * MARGIN - 10.0) / 2.0;
+        let label = if edit { "Done editing" } else { "Edit layout" };
+        outcome.toggle_edit = ui.button(label, rect(MARGIN, footer + 14.0, half, 36.0), edit)?;
+        outcome.open_config = ui.button(
+            "Open config file",
+            rect(MARGIN + half + 10.0, footer + 14.0, half, 36.0),
+            false,
+        )?;
+        outcome.changed = ui.changed;
+
+        let max_scroll = (content_height - (view.1 - view.0)).max(0.0);
+        let clamped = self.scroll.clamp(0.0, max_scroll);
+        outcome.redraw |= outcome.changed || clamped != self.scroll;
+        self.scroll = clamped;
+        Ok(outcome)
+    }
+}
+
+/// The settings window.
+pub struct Panel {
+    pub hwnd: HWND,
+    surface: Surface,
+    size: (u32, u32),
+    view: View,
     pub dirty: bool,
 }
 
@@ -151,13 +279,7 @@ impl Panel {
             hwnd,
             surface: gfx.surface(hwnd, size.0, size.1)?,
             size,
-            tab: 0,
-            scroll: 0.0,
-            mouse: (-1.0, -1.0),
-            down: false,
-            pressed: false,
-            released: false,
-            active: None,
+            view: View::default(),
             dirty: true,
         })
     }
@@ -181,21 +303,22 @@ impl Panel {
     }
 
     pub fn mouse(&mut self, kind: Mouse, x: f32, y: f32) {
+        let view = &mut self.view;
         match kind {
             Mouse::Down => {
-                self.down = true;
-                self.pressed = true;
-                self.mouse = (x, y);
+                view.down = true;
+                view.pressed = true;
+                view.mouse = (x, y);
             }
             Mouse::Up => {
-                self.down = false;
-                self.released = true;
-                self.mouse = (x, y);
+                view.down = false;
+                view.released = true;
+                view.mouse = (x, y);
             }
-            Mouse::Move => self.mouse = (x, y),
+            Mouse::Move => view.mouse = (x, y),
             Mouse::Leave => {
-                if !self.down {
-                    self.mouse = (-1.0, -1.0);
+                if !view.down {
+                    view.mouse = (-1.0, -1.0);
                 }
             }
         }
@@ -203,12 +326,11 @@ impl Panel {
     }
 
     pub fn wheel(&mut self, delta: i32) {
-        self.scroll -= delta as f32 / 120.0 * WHEEL_STEP;
+        self.view.scroll -= delta as f32 / 120.0 * WHEEL_STEP;
         self.dirty = true;
     }
 
-    /// Draws the panel and applies whatever the pointer did to `cfg`.
-    /// `area` is the work area in display-independent pixels.
+    /// Draws the panel into its window.
     pub fn draw(
         &mut self,
         gfx: &mut Gfx,
@@ -218,91 +340,15 @@ impl Panel {
         edit: bool,
         area: (i32, i32),
     ) -> Result<Outcome> {
-        let (w, h) = (self.size.0 as f32 / scale, self.size.1 as f32 / scale);
-        let mut outcome = Outcome::default();
-        let font = cfg.theme.font.clone();
-        // Set when this pass changed something the next pass has to show.
-        let mut again = false;
-
+        let size = (self.size.0 as f32 / scale, self.size.1 as f32 / scale);
         gfx.begin(&self.surface);
         gfx.set_transform(scale, 0.0, 0.0);
-        gfx.fill_rect(rect(0.0, 0.0, w, h), BACKGROUND);
-
-        let view = (TABS_HEIGHT, h - FOOTER_HEIGHT);
-        let mut ui = Ui {
-            g: &mut *gfx,
-            font: &font,
-            accent,
-            left: MARGIN,
-            width: w - 2.0 * MARGIN,
-            y: TABS_HEIGHT + 6.0 - self.scroll,
-            mouse: self.mouse,
-            pressed: self.pressed,
-            down: self.down,
-            released: self.released,
-            active: &mut self.active,
-            next_id: 0,
-            changed: false,
-            view,
-            area,
-        };
-
-        ui.g.push_clip(rect(0.0, view.0, w, view.1 - view.0));
-        let built = match self.tab {
-            0 => general(&mut ui, cfg),
-            1 => clock(&mut ui, cfg),
-            2 => player(&mut ui, cfg),
-            3 => lyrics(&mut ui, cfg),
-            _ => visualizer(&mut ui, cfg),
-        };
-        ui.g.pop_clip();
-        let content_height = ui.y + self.scroll - TABS_HEIGHT + 12.0;
-
-        // Tabs and footer sit outside the scrolling area.
-        ui.view = (0.0, h);
-        let tab_width = w / TABS.len() as f32;
-        for (i, name) in TABS.iter().enumerate() {
-            let cell = rect(tab_width * i as f32, 0.0, tab_width, TABS_HEIGHT - 8.0);
-            let selected = self.tab == i;
-            if ui.clicked(cell) && !selected {
-                self.tab = i;
-                self.scroll = 0.0;
-                again = true;
-            }
-            let color = if selected { TEXT } else { DIM };
-            let weight = if selected { 600 } else { 400 };
-            ui.text(name, cell, 13.0, weight, Align::Center, color)?;
-            if selected {
-                ui.g.fill_rect(
-                    rect(cell.left + 14.0, cell.bottom - 2.0, tab_width - 28.0, 2.0),
-                    accent,
-                );
-            }
-        }
-        ui.g.fill_rect(rect(0.0, TABS_HEIGHT - 8.0, w, 1.0), TRACK);
-
-        let footer = h - FOOTER_HEIGHT;
-        ui.g.fill_rect(rect(0.0, footer, w, 1.0), TRACK);
-        let half = (w - 2.0 * MARGIN - 10.0) / 2.0;
-        let label = if edit { "Done editing" } else { "Edit layout" };
-        outcome.toggle_edit = ui.button(label, rect(MARGIN, footer + 14.0, half, 36.0), edit)?;
-        outcome.open_config = ui.button(
-            "Open config file",
-            rect(MARGIN + half + 10.0, footer + 14.0, half, 36.0),
-            false,
-        )?;
-
-        outcome.changed = ui.changed;
+        let painted = self.view.paint(gfx, cfg, size, accent, edit, area);
+        // The frame is ended whether or not painting succeeded.
         let ended = gfx.end(&self.surface);
-
-        let max_scroll = (content_height - (view.1 - view.0)).max(0.0);
-        let clamped = self.scroll.clamp(0.0, max_scroll);
-        self.dirty = again || outcome.changed || clamped != self.scroll;
-        self.scroll = clamped;
-        self.pressed = false;
-        self.released = false;
-
-        ended.and(built)?;
+        let outcome = painted?;
+        ended?;
+        self.dirty = outcome.redraw;
         Ok(outcome)
     }
 }

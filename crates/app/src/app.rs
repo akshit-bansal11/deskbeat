@@ -1030,7 +1030,7 @@ fn draw_host(gfx: &mut Gfx, host: &mut Host, ctx: &Ctx, scale: f32, edit: bool) 
 }
 
 /// The outline and label shown while the layout is being edited.
-fn draw_edit_frame(gfx: &mut Gfx, kind: Kind, w: f32, h: f32, ctx: &Ctx) -> Result<()> {
+pub fn draw_edit_frame(gfx: &mut Gfx, kind: Kind, w: f32, h: f32, ctx: &Ctx) -> Result<()> {
     let radius = ctx.cfg.theme.card_radius.min(w.min(h) / 2.0);
     gfx.fill_round(rect(0.0, 0.0, w, h), radius, with_alpha(ctx.accent, 0.10));
     gfx.stroke_round(rect(1.0, 1.0, w - 2.0, h - 2.0), radius, ctx.accent, 2.0);

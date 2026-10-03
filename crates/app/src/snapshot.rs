@@ -18,11 +18,12 @@ use windows::Win32::System::Com::{
 };
 use windows::core::{Error, HSTRING, Result};
 
-use crate::app::Palette;
+use crate::app::{Palette, draw_edit_frame};
 use crate::capture::Audio;
 use crate::gfx::{Gfx, rect};
 use crate::lyrics::Lyrics;
 use crate::media::{Art, BLUR_SIDE, MediaState};
+use crate::settings;
 use crate::widgets::{Ctx, Kind};
 
 const WIDTH: u32 = 1600;
@@ -141,11 +142,11 @@ pub fn run(dir: &Path) -> Result<()> {
         media.duration_ms as i64,
     ));
 
-    let mut looks = vec![("default".to_owned(), Config::default())];
+    let mut looks = vec![("default".to_owned(), Config::default(), false)];
     for preset in Preset::ALL {
         let mut cfg = Config::default();
         cfg.apply_preset(preset);
-        looks.push((preset.name().to_lowercase(), cfg));
+        looks.push((preset.name().to_lowercase(), cfg, false));
     }
     // One more to cover the options no preset turns on.
     let mut variant = Config::default();
@@ -154,33 +155,75 @@ pub fn run(dir: &Path) -> Result<()> {
     variant.visualizer.symmetric = true;
     variant.visualizer.card = true;
     variant.clock.time_format = "%l:%M %p".to_owned();
-    looks.push(("word-wave".to_owned(), variant));
+    looks.push(("word-wave".to_owned(), variant, false));
+    looks.push(("edit-mode".to_owned(), Config::default(), true));
 
-    for (name, cfg) in &looks {
+    for (name, cfg, edit) in &looks {
         let path = dir.join(format!("{name}.png"));
-        render(&wic, &path, cfg, &media, &lyrics, &audio)?;
+        png(&wic, &path, (WIDTH, HEIGHT), |gfx| {
+            scene(gfx, cfg, &media, &lyrics, &audio, *edit)
+        })?;
         println!("wrote {}", path.display());
     }
+
+    let tabs = settings::TABS.len() as u32;
+    let sheet = (settings::WIDTH as u32 * tabs, settings::HEIGHT as u32);
+    let path = dir.join("settings.png");
+    png(&wic, &path, sheet, |gfx| settings_sheet(gfx, &media))?;
+    println!("wrote {}", path.display());
     Ok(())
 }
 
-fn render(
+/// Draws into a new bitmap of `size` and saves it as a PNG.
+fn png(
     wic: &IWICImagingFactory,
     path: &Path,
-    cfg: &Config,
-    media: &MediaState,
-    lyrics: &Lyrics,
-    audio: &Audio,
+    size: (u32, u32),
+    draw: impl FnOnce(&mut Gfx) -> Result<()>,
 ) -> Result<()> {
     let bitmap = unsafe {
         wic.CreateBitmap(
-            WIDTH,
-            HEIGHT,
+            size.0,
+            size.1,
             &GUID_WICPixelFormat32bppPBGRA,
             WICBitmapCacheOnLoad,
         )?
     };
     let mut gfx = Gfx::for_bitmap(&bitmap)?;
+    gfx.begin_draw();
+    let drawn = draw(&mut gfx);
+    gfx.end_draw()?;
+    drawn?;
+    drop(gfx);
+
+    unsafe {
+        let stream = wic.CreateStream()?;
+        stream.InitializeFromFilename(&HSTRING::from(path.as_os_str()), GENERIC_WRITE.0)?;
+        let encoder = wic.CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null())?;
+        encoder.Initialize(&stream, WICBitmapEncoderNoCache)?;
+
+        let mut frame = None;
+        encoder.CreateNewFrame(&mut frame, std::ptr::null_mut())?;
+        let frame = frame.ok_or_else(|| Error::from(E_FAIL))?;
+        frame.Initialize(None)?;
+        frame.SetSize(size.0, size.1)?;
+        let mut format = GUID_WICPixelFormat32bppBGRA;
+        frame.SetPixelFormat(&mut format)?;
+        frame.WriteSource(&bitmap, std::ptr::null())?;
+        frame.Commit()?;
+        encoder.Commit()
+    }
+}
+
+/// All four widgets where the config puts them, over a stand-in wallpaper.
+fn scene(
+    gfx: &mut Gfx,
+    cfg: &Config,
+    media: &MediaState,
+    lyrics: &Lyrics,
+    audio: &Audio,
+    edit: bool,
+) -> Result<()> {
     let palette = Palette::new(cfg);
     let ctx_at = |now_ms: f64| Ctx {
         cfg,
@@ -204,7 +247,6 @@ fn render(
         accent: palette.accent(media),
     };
 
-    gfx.begin_draw();
     // Widgets are translucent, so they need a wallpaper behind them to judge.
     let wallpaper = gfx.vertical_gradient(
         0.0,
@@ -214,44 +256,42 @@ fn render(
     )?;
     gfx.fill_round_with(rect(0.0, 0.0, WIDTH as f32, HEIGHT as f32), 0.0, &wallpaper);
 
-    let mut drawn = Ok(());
     for kind in Kind::ALL {
         if !kind.enabled(cfg) {
             continue;
         }
         let frame = kind.frame(cfg);
         let (x, y) = frame.origin(WIDTH as i32, HEIGHT as i32);
+        let (w, h) = (frame.w as f32, frame.h as f32);
         let mut widget = kind.create();
         for step in 0..WARM_UP_TICKS {
             widget.tick(&ctx_at(f64::from(step) * 16.7));
         }
-        gfx.set_transform(1.0, x as f32, y as f32);
         let ctx = ctx_at(f64::from(WARM_UP_TICKS) * 16.7);
-        drawn = drawn.and(widget.draw(&mut gfx, frame.w as f32, frame.h as f32, &ctx));
+        gfx.set_transform(1.0, x as f32, y as f32);
+        widget.draw(gfx, w, h, &ctx)?;
+        if edit {
+            draw_edit_frame(gfx, kind, w, h, &ctx)?;
+        }
     }
-    gfx.end_draw()?;
-    drawn?;
-    drop(gfx);
-
-    save_png(wic, &bitmap, path)
+    Ok(())
 }
 
-fn save_png(wic: &IWICImagingFactory, bitmap: &IWICBitmap, path: &Path) -> Result<()> {
-    unsafe {
-        let stream = wic.CreateStream()?;
-        stream.InitializeFromFilename(&HSTRING::from(path.as_os_str()), GENERIC_WRITE.0)?;
-        let encoder = wic.CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null())?;
-        encoder.Initialize(&stream, WICBitmapEncoderNoCache)?;
-
-        let mut frame = None;
-        encoder.CreateNewFrame(&mut frame, std::ptr::null_mut())?;
-        let frame = frame.ok_or_else(|| Error::from(E_FAIL))?;
-        frame.Initialize(None)?;
-        frame.SetSize(WIDTH, HEIGHT)?;
-        let mut format = GUID_WICPixelFormat32bppBGRA;
-        frame.SetPixelFormat(&mut format)?;
-        frame.WriteSource(bitmap, std::ptr::null())?;
-        frame.Commit()?;
-        encoder.Commit()
+/// Every tab of the settings panel, side by side.
+fn settings_sheet(gfx: &mut Gfx, media: &MediaState) -> Result<()> {
+    let mut cfg = Config::default();
+    let accent = Palette::new(&cfg).accent(media);
+    for tab in 0..settings::TABS.len() {
+        let mut view = settings::View::on_tab(tab);
+        gfx.set_transform(1.0, settings::WIDTH * tab as f32, 0.0);
+        view.paint(
+            gfx,
+            &mut cfg,
+            (settings::WIDTH, settings::HEIGHT),
+            accent,
+            false,
+            (WIDTH as i32, HEIGHT as i32),
+        )?;
     }
+    Ok(())
 }
