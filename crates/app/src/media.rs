@@ -20,6 +20,7 @@ use windows::Win32::System::Com::{
 };
 use windows::core::Result;
 
+use crate::capture::target_exe;
 use crate::window::WM_APP_MEDIA;
 use crate::{Notify, log, now_ms};
 
@@ -107,12 +108,32 @@ fn filetime_now() -> i64 {
     (unix.as_secs() as i64 + EPOCH_GAP_SECS) * 10_000_000 + i64::from(unix.subsec_nanos() / 100)
 }
 
+/// Spotify's session. The desktop build identifies itself as `Spotify.exe`
+/// and the Store build as `SpotifyAB.SpotifyMusic_...!Spotify`; both contain
+/// the name.
 fn find_spotify(manager: &Manager) -> Option<Session> {
+    let name = target_exe()
+        .to_ascii_lowercase()
+        .trim_end_matches(".exe")
+        .to_owned();
     manager.GetSessions().ok()?.into_iter().find(|session| {
         session
             .SourceAppUserModelId()
-            .is_ok_and(|id| id.to_string().to_ascii_lowercase().contains("spotify"))
+            .is_ok_and(|id| id.to_string().to_ascii_lowercase().contains(&name))
     })
+}
+
+/// The id of every app with a media session right now, for the probe.
+pub fn session_ids() -> Vec<String> {
+    let ids = || -> Result<Vec<String>> {
+        Manager::RequestAsync()?
+            .join()?
+            .GetSessions()?
+            .into_iter()
+            .map(|session| Ok(session.SourceAppUserModelId()?.to_string()))
+            .collect()
+    };
+    ids().unwrap_or_default()
 }
 
 fn watch(session: &Session, events: &Sender<Cmd>) -> Result<()> {

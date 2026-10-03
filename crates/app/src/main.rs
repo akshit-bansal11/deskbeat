@@ -132,7 +132,13 @@ fn probe(source: AudioSource) -> Result<()> {
     let _controls = media::spawn(shared.clone(), Notify::none());
     let audio = capture::spawn(Notify::none())?;
     audio.set_source(Some(source));
-    println!("spotify root process: {:?}", capture::spotify_pid());
+    println!(
+        "following {}: root process {:?}",
+        capture::target_exe(),
+        capture::spotify_pid()
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    println!("apps with a media session: {:?}", media::session_ids());
 
     let mut samples = vec![0.0f32; 2048];
     for _ in 0..16 {

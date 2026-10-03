@@ -172,18 +172,22 @@ struct Stream {
     pid: Option<u32>,
 }
 
-/// The executable whose audio the Spotify source listens to. Only the
-/// `--probe` diagnostic changes it, to test capture against another app.
+/// The executable this app follows. Only the `--probe` diagnostic changes
+/// it, to test the capture and media-session code against another app.
 static TARGET_EXE: OnceLock<String> = OnceLock::new();
 
 pub fn set_target_exe(name: String) {
     let _ = TARGET_EXE.set(name);
 }
 
+pub fn target_exe() -> &'static str {
+    TARGET_EXE.get().map_or("Spotify.exe", String::as_str)
+}
+
 /// The Spotify process at the root of its tree: Spotify runs several
 /// processes and the audio comes from a child of the first.
 pub fn spotify_pid() -> Option<u32> {
-    let target = TARGET_EXE.get().map_or("Spotify.exe", String::as_str);
+    let target = target_exe();
     let mut found: Vec<(u32, u32)> = Vec::new();
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
