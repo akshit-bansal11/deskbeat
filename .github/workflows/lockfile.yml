@@ -1,0 +1,18 @@
+# Resolves Cargo.lock on a runner. The maintainer's machine has no Rust
+# toolchain, so any change to a Cargo.toml is followed by running this on the
+# branch and committing the uploaded Cargo.lock.
+name: lockfile
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  lock:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo update --workspace
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: Cargo.lock
+          path: Cargo.lock

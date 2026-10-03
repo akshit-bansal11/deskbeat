@@ -1,0 +1,16 @@
+# Secrets. This project needs none; ignored so one can never be committed by accident.
+.env
+.env.*
+!.env.example
+
+# Rust
+/target/
+
+# Snapshot renders
+/snapshots/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
