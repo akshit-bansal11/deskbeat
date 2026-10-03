@@ -18,7 +18,7 @@ use windows::Win32::System::Com::{
 };
 use windows::core::{Error, HSTRING, Result};
 
-use crate::app::{Palette, draw_edit_frame};
+use crate::app::Palette;
 use crate::capture::Audio;
 use crate::gfx::{Gfx, rect};
 use crate::lyrics::Lyrics;
@@ -142,11 +142,11 @@ pub fn run(dir: &Path) -> Result<()> {
         media.duration_ms as i64,
     ));
 
-    let mut looks = vec![("default".to_owned(), Config::default(), false)];
+    let mut looks = vec![("default".to_owned(), Config::default())];
     for preset in Preset::ALL {
         let mut cfg = Config::default();
         cfg.apply_preset(preset);
-        looks.push((preset.name().to_lowercase(), cfg, false));
+        looks.push((preset.name().to_lowercase(), cfg));
     }
     // One more to cover the options no preset turns on.
     let mut variant = Config::default();
@@ -157,14 +157,17 @@ pub fn run(dir: &Path) -> Result<()> {
     variant.visualizer.flip_x = true;
     // The date moved above the time and the day beside it.
     variant.clock.date.y = 8.0;
-    variant.clock.day = sonic_veil_core::config::Spot::at(250.0, 150.0);
+    (variant.clock.day.x, variant.clock.day.y) = (250.0, 150.0);
+    variant.clock.date.size = 28.0;
+    variant.player.bar_height = 10.0;
+    variant.player.title.font = "Georgia".to_owned();
+    variant.player.elapsed.size = 16.0;
     variant.lyrics.inactive_color = "accent".to_owned();
     variant.lyrics.word_color = "#F9F871".to_owned();
     variant.lyrics.stroke_width = 2.0;
     variant.player.arrange(PlayerLayout::Centered);
     variant.clock.time_format = "%l:%M %p".to_owned();
-    looks.push(("word-wave".to_owned(), variant, false));
-    looks.push(("edit-mode".to_owned(), Config::default(), true));
+    looks.push(("word-wave".to_owned(), variant));
     // Bars hanging from the top edge of the screen.
     let mut hanging = Config::default();
     hanging.visualizer.flip_y = true;
@@ -172,10 +175,10 @@ pub fn run(dir: &Path) -> Result<()> {
     hanging.clock.frame.y = 200;
     looks.push(("flipped".to_owned(), hanging, false));
 
-    for (name, cfg, edit) in &looks {
+    for (name, cfg) in &looks {
         let path = dir.join(format!("{name}.png"));
         png(&wic, &path, (WIDTH, HEIGHT), |gfx| {
-            scene(gfx, cfg, &media, &lyrics, &audio, *edit)
+            scene(gfx, cfg, &media, &lyrics, &audio)
         })?;
         println!("wrote {}", path.display());
     }
@@ -236,7 +239,6 @@ fn scene(
     media: &MediaState,
     lyrics: &Lyrics,
     audio: &Audio,
-    edit: bool,
 ) -> Result<()> {
     let palette = Palette::new(cfg);
     let ctx_at = |now_ms: f64| Ctx {
@@ -284,9 +286,6 @@ fn scene(
         let ctx = ctx_at(f64::from(WARM_UP_TICKS) * 16.7);
         gfx.set_transform(1.0, x as f32, y as f32);
         widget.draw(gfx, w, h, &ctx)?;
-        if edit {
-            draw_edit_frame(gfx, kind, w, h, &ctx, widget.parts())?;
-        }
     }
     Ok(())
 }
@@ -303,7 +302,11 @@ fn settings_sheet(gfx: &mut Gfx, media: &MediaState) -> Result<()> {
             &mut cfg,
             (settings::WIDTH, settings::HEIGHT),
             accent,
-            false,
+            settings::Status {
+                edit: false,
+                hidden: false,
+                autostart: true,
+            },
             (WIDTH as i32, HEIGHT as i32),
         )?;
     }

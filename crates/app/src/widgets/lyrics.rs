@@ -8,7 +8,7 @@ use sonic_veil_core::timing::Line;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 use windows::core::Result;
 
-use super::{Ctx, Tick, Wake, Widget, draw_card};
+use super::{Ctx, Tick, Wake, Widget, draw_card, named_color};
 use crate::gfx::{Gfx, TextFx, TextStyle};
 use crate::lyrics::Lyrics;
 
@@ -119,7 +119,7 @@ impl LyricsView {
     fn build_layouts(&mut self, g: &mut Gfx, texts: &[&str], width: f32, ctx: &Ctx) -> Result<()> {
         let cfg = &ctx.cfg.lyrics;
         let style = TextStyle {
-            font: &ctx.cfg.theme.font,
+            font: lyric_font(g, ctx),
             size: cfg.size,
             weight: cfg.weight,
             align: cfg.align,
@@ -142,7 +142,7 @@ impl LyricsView {
     fn status(&self, g: &mut Gfx, message: &str, w: f32, h: f32, ctx: &Ctx) -> Result<()> {
         let cfg = &ctx.cfg.lyrics;
         let style = TextStyle {
-            font: &ctx.cfg.theme.font,
+            font: lyric_font(g, ctx),
             size: (cfg.size * 0.6).max(13.0),
             weight: 500,
             align: cfg.align,
@@ -160,12 +160,14 @@ impl LyricsView {
     }
 }
 
-/// A lyric colour setting: the theme's text or accent colour by name, or a hex colour.
-fn named_color(name: &str, ctx: &Ctx) -> Rgba {
-    match name {
-        "accent" => ctx.accent,
-        "text" | "" => ctx.text,
-        hex => parse_hex(hex).unwrap_or(ctx.text),
+/// The lyrics font, falling back to the theme font when it is not set or
+/// not available.
+fn lyric_font<'a>(g: &Gfx, ctx: &Ctx<'a>) -> &'a str {
+    let cfg = ctx.cfg;
+    if !cfg.lyrics.font.is_empty() && g.has_font(&cfg.lyrics.font) {
+        &cfg.lyrics.font
+    } else {
+        &cfg.theme.font
     }
 }
 

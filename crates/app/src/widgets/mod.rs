@@ -7,8 +7,8 @@ pub mod visualizer;
 
 use std::time::Duration;
 
-use sonic_veil_core::color::{Rgba, with_alpha};
-use sonic_veil_core::config::{Align, ClockRow, Config, Frame, PlayerPart, Spot};
+use sonic_veil_core::color::{Rgba, parse_hex, with_alpha};
+use sonic_veil_core::config::{Align, ClockRow, Config, Frame, Label, PlayerPart};
 use sonic_veil_core::timefmt::LocalTime;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
@@ -169,17 +169,22 @@ impl Kind {
         }
     }
 
-    /// The position of one of the widget's own elements, by the id it
-    /// reported in `Widget::parts`.
-    pub fn spot_mut(self, cfg: &mut Config, id: u8) -> Option<&mut Spot> {
-        match self {
-            Kind::Clock => ClockRow::ALL
-                .get(id as usize)
-                .map(|&row| cfg.clock.spot_mut(row)),
+    /// Moves one of the widget's own elements, by the id it reported in
+    /// `Widget::parts`.
+    pub fn nudge(self, cfg: &mut Config, id: u8, dx: f32, dy: f32) {
+        let position = match self {
+            Kind::Clock => ClockRow::ALL.get(id as usize).map(|&row| {
+                let label = cfg.clock.label_mut(row);
+                (&mut label.x, &mut label.y)
+            }),
             Kind::Player => PlayerPart::ALL
                 .get(id as usize)
-                .map(|&part| cfg.player.spot_mut(part)),
+                .map(|&part| cfg.player.position_mut(part)),
             Kind::Lyrics | Kind::Visualizer => None,
+        };
+        if let Some((x, y)) = position {
+            *x += dx;
+            *y += dy;
         }
     }
 
@@ -235,7 +240,7 @@ pub fn contains(r: &D2D_RECT_F, x: f32, y: f32) -> bool {
     x >= r.left && x < r.right && y >= r.top && y < r.bottom
 }
 
-/// A line of text laid out at a [`Spot`].
+/// A line of text laid out where its label puts it.
 pub struct Placed {
     pub layout: IDWriteTextLayout,
     /// Where to draw the layout so the text lands on the spot.
@@ -249,44 +254,67 @@ const LINE_BOX_TRIM: f32 = 0.15;
 /// The narrowest a line is ever squeezed to before it is cut with an ellipsis.
 const MIN_TEXT_WIDTH: f32 = 60.0;
 
-/// Lays out one line of text at `spot`. `face` is the font family, size and
-/// weight. The text takes at most `room` and is cut with an ellipsis beyond.
-pub fn place_text(
-    g: &mut Gfx,
-    text: &str,
-    (font, size, weight): (&str, f32, u32),
-    spot: &Spot,
-    room: f32,
-    spacing: f32,
-) -> Result<Placed> {
+/// A colour setting: the theme's text or accent colour by name, or a hex colour.
+pub fn named_color(name: &str, ctx: &Ctx) -> Rgba {
+    match name {
+        "accent" => ctx.accent,
+        "text" | "" => ctx.text,
+        hex => parse_hex(hex).unwrap_or(ctx.text),
+    }
+}
+
+/// The colour a label draws in, inside a widget drawn at `opacity`.
+pub fn label_color(label: &Label, ctx: &Ctx, opacity: f32) -> Rgba {
+    with_alpha(named_color(&label.color, ctx), label.opacity * opacity)
+}
+
+/// Lays out one piece of text the way its label asks: font, size, weight,
+/// letter spacing, capitals, and which edge sits on its position. The text
+/// takes at most `room` and is cut with an ellipsis beyond.
+pub fn place_label(g: &mut Gfx, text: &str, label: &Label, ctx: &Ctx, room: f32) -> Result<Placed> {
     let room = room.max(MIN_TEXT_WIDTH);
+    // A font that is missing would be substituted by something unrelated;
+    // the theme font is the better stand-in.
+    let font = if !label.font.is_empty() && g.has_font(&label.font) {
+        label.font.as_str()
+    } else {
+        ctx.cfg.theme.font.as_str()
+    };
+    let capitals;
+    let text = if label.uppercase {
+        capitals = text.to_uppercase();
+        capitals.as_str()
+    } else {
+        text
+    };
     let style = TextStyle {
         font,
-        size,
-        weight,
-        align: spot.align,
+        size: label.size,
+        weight: label.weight,
+        align: label.align,
         wrap: false,
     };
     let layout = g.layout(text, &style, room, 10_000.0)?;
-    if spacing > 0.0 {
-        Gfx::letter_space(&layout, text.encode_utf16().count() as u32, spacing)?;
+    if label.spacing > 0.0 {
+        let units = text.encode_utf16().count() as u32;
+        Gfx::letter_space(&layout, units, label.spacing * label.size)?;
     }
     let (text_w, text_h) = Gfx::measure(&layout);
     let text_w = text_w.min(room);
-    // How far left of the spot the layout box, and the text in it, begin.
-    let (box_back, text_back) = match spot.align {
+    // How far left of the position the layout box, and the text in it, begin.
+    let (box_back, text_back) = match label.align {
         Align::Left => (0.0, 0.0),
         Align::Right => (room, text_w),
         Align::Center => (room / 2.0, text_w / 2.0),
     };
     Ok(Placed {
         layout,
-        x: spot.x - box_back,
+        x: label.x - box_back,
         // A line box is taller than its letters, most of all at large sizes.
         // Trimmed, so the grab box of one row does not cover its neighbours.
         rect: rect(
-            spot.x - text_back,
-            spot.y + text_h * LINE_BOX_TRIM,
+            label.x - text_back,
+            label.y + text_h * LINE_BOX_TRIM,
             text_w,
             text_h * (1.0 - 2.0 * LINE_BOX_TRIM),
         ),

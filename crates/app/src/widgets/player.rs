@@ -1,24 +1,27 @@
 //! Now playing: art, title, artist, transport buttons and progress. Each is
-//! placed on its own, wherever the config puts it.
+//! placed, sized and styled on its own, wherever the config puts it.
 
 use sonic_veil_core::color::{Rgba, with_alpha};
-use sonic_veil_core::config::{Align, PlayerBackground, PlayerPart};
+use sonic_veil_core::config::{Align, Label, PlayerBackground, PlayerPart};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::ID2D1Bitmap;
 use windows::core::Result;
 
-use super::{Action, Ctx, Part, Tick, Wake, Widget, clock_text, contains, draw_card, place_text};
+use super::{
+    Action, Ctx, Part, Tick, Wake, Widget, clock_text, contains, draw_card, label_color,
+    named_color, place_label,
+};
 use crate::gfx::{Gfx, ICON_FONT, TextStyle, rect};
 use crate::media::BLUR_SIDE;
 
-const BUTTON: f32 = 30.0;
-const BAR_HEIGHT: f32 = 4.0;
 /// Extra distance above and below the bar that still counts as on it, for
 /// clicking to seek and for grabbing it in edit mode.
 const BAR_SLOP: f32 = 9.0;
-const TIME_SIZE: f32 = 12.0;
-/// Room for a track time such as 1:23:45.
-const TIME_ROOM: f32 = 120.0;
+/// Room for a track time such as 1:23:45, at any size.
+const TIME_ROOM: f32 = 600.0;
+/// Glyph size as a share of the button: the play glyph is drawn larger.
+const GLYPH_SHARE: f32 = 0.47;
+const PLAY_GLYPH_SHARE: f32 = 0.57;
 const IDLE_MESSAGE: &str = "Play something on Spotify";
 
 // Segoe Fluent Icons code points.
@@ -57,6 +60,27 @@ pub struct Player {
     bar: D2D_RECT_F,
     /// Every element drawn last time, for dragging in edit mode.
     parts: Vec<Part>,
+}
+
+impl Player {
+    /// Draws one text element and records its box.
+    fn text(
+        &mut self,
+        g: &mut Gfx,
+        part: PlayerPart,
+        text: &str,
+        label: &Label,
+        room: f32,
+        ctx: &Ctx,
+    ) -> Result<()> {
+        let p = &ctx.cfg.player;
+        let shadow = ctx.cfg.theme.text_shadow && p.background == PlayerBackground::None;
+        let placed = place_label(g, text, label, ctx, room)?;
+        let color = label_color(label, ctx, p.opacity);
+        g.draw_text(&placed.layout, placed.x, label.y, color, shadow);
+        self.parts.push((part as u8, placed.rect));
+        Ok(())
+    }
 }
 
 impl Widget for Player {
@@ -114,9 +138,6 @@ impl Widget for Player {
         let theme = &ctx.cfg.theme;
         let media = ctx.media;
         let o = p.opacity;
-        let text = with_alpha(ctx.text, o);
-        let dim = with_alpha(ctx.text, 0.66 * o);
-        let shadow = theme.text_shadow && p.background == PlayerBackground::None;
 
         if self.art_gen != Some(media.art_gen) {
             self.art_gen = Some(media.art_gen);
@@ -151,60 +172,65 @@ impl Widget for Player {
 
         if p.show_art && p.art_size > 0.0 {
             let frame = rect(p.art.x, p.art.y, p.art_size, p.art_size);
-            let art_radius = (radius - 7.0).clamp(4.0, p.art_size / 2.0);
+            let art_radius = p.art_size * p.art_radius;
             match &self.art {
                 Some(art) => g.fill_round_bitmap(art, frame, art_radius, o)?,
                 None => {
                     g.fill_round(frame, art_radius, [1.0, 1.0, 1.0, 0.09 * o]);
+                    let dim = with_alpha(ctx.text, 0.66 * o);
                     icon(g, ICON_NOTE, p.art_size * 0.34, frame, dim)?;
                 }
             }
             self.parts.push((PlayerPart::Art as u8, frame));
         }
 
-        // Title and artist, or one line saying nothing is playing.
-        let (title, title_size, title_weight, title_color) = if media.present {
-            (media.title.as_str(), p.title_size, 600, text)
-        } else {
-            (IDLE_MESSAGE, p.artist_size, 400, dim)
-        };
-        let font = theme.font.as_str();
-        let face = (font, title_size, title_weight);
-        let placed = place_text(g, title, face, &p.title, p.text_width, 0.0)?;
-        g.draw_text(&placed.layout, placed.x, p.title.y, title_color, shadow);
-        self.parts.push((PlayerPart::Title as u8, placed.rect));
         if !media.present {
-            return Ok(());
+            // One line where the title goes, in the quieter artist style.
+            let idle = Label {
+                x: p.title.x,
+                y: p.title.y,
+                align: p.title.align,
+                ..p.artist.clone()
+            };
+            return self.text(g, PlayerPart::Title, IDLE_MESSAGE, &idle, p.text_width, ctx);
         }
-        let placed = place_text(
+        self.text(
             g,
+            PlayerPart::Title,
+            &media.title,
+            &p.title,
+            p.text_width,
+            ctx,
+        )?;
+        self.text(
+            g,
+            PlayerPart::Artist,
             &media.artist,
-            (font, p.artist_size, 400),
             &p.artist,
             p.text_width,
-            0.0,
+            ctx,
         )?;
-        g.draw_text(&placed.layout, placed.x, p.artist.y, dim, shadow);
-        self.parts.push((PlayerPart::Artist as u8, placed.rect));
 
         if p.show_controls {
+            let size = p.button_size;
+            let color = with_alpha(named_color(&p.button_color, ctx), o);
             let play = if media.playing { ICON_PAUSE } else { ICON_PLAY };
             let buttons = [
-                (PlayerPart::Previous, p.previous, ICON_PREVIOUS, 14.0),
-                (PlayerPart::Play, p.play, play, 17.0),
-                (PlayerPart::Next, p.next, ICON_NEXT, 14.0),
+                (PlayerPart::Previous, p.previous, ICON_PREVIOUS, GLYPH_SHARE),
+                (PlayerPart::Play, p.play, play, PLAY_GLYPH_SHARE),
+                (PlayerPart::Next, p.next, ICON_NEXT, GLYPH_SHARE),
             ];
-            for (i, (part, spot, glyph, size)) in buttons.into_iter().enumerate() {
-                let button = rect(spot.x, spot.y, BUTTON, BUTTON);
+            for (i, (part, spot, glyph, share)) in buttons.into_iter().enumerate() {
+                let button = rect(spot.x, spot.y, size, size);
                 if self.hover == Some(i) {
                     g.fill_circle(
-                        spot.x + BUTTON / 2.0,
-                        spot.y + BUTTON / 2.0,
-                        BUTTON / 2.0,
+                        spot.x + size / 2.0,
+                        spot.y + size / 2.0,
+                        size / 2.0,
                         [1.0, 1.0, 1.0, 0.14 * o],
                     );
                 }
-                icon(g, glyph, size, button, text)?;
+                icon(g, glyph, size * share, button, color)?;
                 self.buttons[i] = button;
                 self.parts.push((part as u8, button));
             }
@@ -217,34 +243,31 @@ impl Widget for Player {
             } else {
                 0.0
             };
-            let bar = rect(p.bar.x, p.bar.y, p.bar_width, BAR_HEIGHT);
-            g.fill_round(bar, BAR_HEIGHT / 2.0, [1.0, 1.0, 1.0, 0.18 * o]);
+            let thick = p.bar_height;
+            let bar = rect(p.bar.x, p.bar.y, p.bar_width, thick);
+            g.fill_round(bar, thick / 2.0, [1.0, 1.0, 1.0, p.bar_track_opacity * o]);
             if fraction > 0.0 {
-                let done = (p.bar_width * fraction).max(BAR_HEIGHT);
+                let done = (p.bar_width * fraction).max(thick.min(p.bar_width));
                 g.fill_round(
-                    rect(p.bar.x, p.bar.y, done, BAR_HEIGHT),
-                    BAR_HEIGHT / 2.0,
-                    with_alpha(ctx.accent, o),
+                    rect(p.bar.x, p.bar.y, done, thick),
+                    thick / 2.0,
+                    with_alpha(named_color(&p.bar_color, ctx), o),
                 );
             }
             self.bar = bar;
-            // Four pixels are too thin to grab, so its handle is taller.
+            // A thin bar is hard to grab, so its handle is taller than it.
             let handle = rect(
                 p.bar.x,
                 p.bar.y - BAR_SLOP,
                 p.bar_width,
-                BAR_HEIGHT + 2.0 * BAR_SLOP,
+                thick + 2.0 * BAR_SLOP,
             );
             self.parts.push((PlayerPart::Bar as u8, handle));
 
-            for (part, spot, label) in [
-                (PlayerPart::Elapsed, &p.elapsed, clock_text(position)),
-                (PlayerPart::Total, &p.total, clock_text(media.duration_ms)),
-            ] {
-                let placed = place_text(g, &label, (font, TIME_SIZE, 400), spot, TIME_ROOM, 0.0)?;
-                g.draw_text(&placed.layout, placed.x, spot.y, dim, shadow);
-                self.parts.push((part as u8, placed.rect));
-            }
+            let elapsed = clock_text(position);
+            let total = clock_text(media.duration_ms);
+            self.text(g, PlayerPart::Elapsed, &elapsed, &p.elapsed, TIME_ROOM, ctx)?;
+            self.text(g, PlayerPart::Total, &total, &p.total, TIME_ROOM, ctx)?;
         }
         Ok(())
     }

@@ -61,7 +61,6 @@ pub enum Event {
     /// Resolution, DPI or work area changed.
     Display,
     Tray(u32),
-    Command(u32),
     Hotkey(i32),
     Foreground(HWND),
     Mouse {
@@ -186,7 +185,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_APP_AUDIO => push(Event::Audio),
         WM_APP_SHOW_SETTINGS => push(Event::ShowSettings),
         WM_APP_TRAY => push(Event::Tray(lp.0 as u32)),
-        WM_COMMAND => push(Event::Command((wp.0 & 0xFFFF) as u32)),
         WM_HOTKEY => push(Event::Hotkey(wp.0 as i32)),
         WM_DISPLAYCHANGE | WM_DPICHANGED => push(Event::Display),
         WM_SETTINGCHANGE if wp.0 == SPI_SETWORKAREA.0 as usize => push(Event::Display),

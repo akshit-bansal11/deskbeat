@@ -167,37 +167,90 @@ pub enum Align {
 }
 
 /// Where one element sits inside its widget, in display-independent pixels
-/// from the widget's top-left corner. Every element of the clock and the
-/// player has one, and each can be dragged on its own in edit mode.
+/// from the widget's top-left corner.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Spot {
     pub x: f32,
     pub y: f32,
-    /// For text: which edge of the text `x` marks. `center` keeps a title
-    /// centred on `x` whatever its length.
-    pub align: Align,
 }
 
 impl Spot {
     pub const fn at(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
+fn sanitize_position(x: &mut f32, y: &mut f32) {
+    for value in [x, y] {
+        *value = if value.is_finite() {
+            value.clamp(-4000.0, 8000.0)
+        } else {
+            0.0
+        };
+    }
+}
+
+/// One piece of text: where it sits and everything about how it looks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Label {
+    pub x: f32,
+    pub y: f32,
+    /// Which edge of the text `x` marks. `center` keeps a title centred on
+    /// `x` whatever its length.
+    pub align: Align,
+    /// Empty, or a font that is not available, uses the theme font.
+    pub font: String,
+    pub size: f32,
+    /// 100 to 900.
+    pub weight: u32,
+    /// `"text"`, `"accent"`, or a hex colour.
+    pub color: String,
+    pub opacity: f32,
+    /// Extra space after every letter, as a fraction of the size.
+    pub spacing: f32,
+    pub uppercase: bool,
+}
+
+impl Default for Label {
+    fn default() -> Self {
         Self {
-            x,
-            y,
+            x: 0.0,
+            y: 0.0,
             align: Align::Left,
+            font: String::new(),
+            size: 16.0,
+            weight: 400,
+            color: "text".to_owned(),
+            opacity: 1.0,
+            spacing: 0.0,
+            uppercase: false,
+        }
+    }
+}
+
+impl Label {
+    fn sized(size: f32, weight: u32) -> Self {
+        Self {
+            size,
+            weight,
+            ..Self::default()
         }
     }
 
-    pub const fn anchored(x: f32, y: f32, align: Align) -> Self {
-        Self { x, y, align }
-    }
-
     fn sanitize(&mut self) {
-        for value in [&mut self.x, &mut self.y] {
+        sanitize_position(&mut self.x, &mut self.y);
+        self.weight = self.weight.clamp(100, 900);
+        for (value, lo, hi, fallback) in [
+            (&mut self.size, 6.0, 400.0, 16.0),
+            (&mut self.opacity, 0.0, 1.0, 1.0),
+            (&mut self.spacing, 0.0, 2.0, 0.0),
+        ] {
             *value = if value.is_finite() {
-                value.clamp(-4000.0, 8000.0)
+                value.clamp(lo, hi)
             } else {
-                0.0
+                fallback
             };
         }
     }
@@ -224,23 +277,12 @@ pub struct ClockCfg {
     pub day_format: String,
     pub time_format: String,
     pub date_format: String,
-    /// Font of the day row. Empty, or a font that is not installed, uses the
-    /// theme font.
-    pub day_font: String,
-    /// Font of the time and date rows, with the same fallback.
-    pub time_font: String,
-    pub day_size: f32,
-    pub time_size: f32,
-    /// Size of the date row.
-    pub text_size: f32,
-    /// Font weight of the time, 100 to 900.
-    pub time_weight: u32,
     pub show_day: bool,
     pub show_time: bool,
     pub show_date: bool,
-    pub day: Spot,
-    pub time: Spot,
-    pub date: Spot,
+    pub day: Label,
+    pub time: Label,
+    pub date: Label,
     pub frame: Frame,
 }
 
@@ -254,25 +296,46 @@ impl Default for ClockCfg {
             day_format: "%A".to_owned(),
             time_format: "%H:%M".to_owned(),
             date_format: "%e %B %Y".to_owned(),
-            // The pairing the Mond Rainmeter skin uses.
-            day_font: "Anurati".to_owned(),
-            time_font: "Quicksand".to_owned(),
-            day_size: 34.0,
-            time_size: 96.0,
-            text_size: 20.0,
-            time_weight: 300,
             show_day: true,
             show_time: true,
             show_date: true,
-            day: Spot::at(4.0, 18.0),
-            time: Spot::at(4.0, 46.0),
-            date: Spot::at(4.0, 156.0),
+            // Anurati and Quicksand: the pairing the Mond Rainmeter skin uses.
+            day: Label {
+                x: 14.0,
+                y: 8.0,
+                font: "Anurati".to_owned(),
+                color: "accent".to_owned(),
+                spacing: 0.16,
+                uppercase: true,
+                ..Label::sized(34.0, 600)
+            },
+            time: Label {
+                x: 14.0,
+                y: 36.0,
+                font: "Quicksand".to_owned(),
+                ..Label::sized(96.0, 300)
+            },
+            date: Label {
+                x: 14.0,
+                y: 146.0,
+                font: "Quicksand".to_owned(),
+                opacity: 0.74,
+                ..Label::sized(20.0, 400)
+            },
         }
     }
 }
 
 impl ClockCfg {
-    pub fn spot_mut(&mut self, row: ClockRow) -> &mut Spot {
+    pub fn label(&self, row: ClockRow) -> &Label {
+        match row {
+            ClockRow::Day => &self.day,
+            ClockRow::Time => &self.time,
+            ClockRow::Date => &self.date,
+        }
+    }
+
+    pub fn label_mut(&mut self, row: ClockRow) -> &mut Label {
         match row {
             ClockRow::Day => &mut self.day,
             ClockRow::Time => &mut self.time,
@@ -280,10 +343,13 @@ impl ClockCfg {
         }
     }
 
-    /// Puts the three rows back where they start.
-    pub fn reset_spots(&mut self) {
+    /// Puts the three rows back where they start, keeping how they look.
+    pub fn reset_positions(&mut self) {
         let fresh = ClockCfg::default();
-        (self.day, self.time, self.date) = (fresh.day, fresh.time, fresh.date);
+        for row in ClockRow::ALL {
+            let (from, to) = (fresh.label(row), self.label_mut(row));
+            (to.x, to.y, to.align) = (from.x, from.y, from.align);
+        }
     }
 }
 
@@ -347,23 +413,31 @@ pub struct PlayerCfg {
     pub show_art: bool,
     pub show_progress: bool,
     pub show_controls: bool,
-    pub title_size: f32,
-    pub artist_size: f32,
     /// Side of the album art square.
     pub art_size: f32,
-    /// Length of the progress bar.
+    /// Corner rounding of the album art, as a fraction of its side. 0.5 is a circle.
+    pub art_radius: f32,
+    /// Length and thickness of the progress bar.
     pub bar_width: f32,
+    pub bar_height: f32,
+    /// Colour of the played part: `"text"`, `"accent"`, or a hex colour.
+    pub bar_color: String,
+    /// How visible the unplayed part of the bar is.
+    pub bar_track_opacity: f32,
+    /// Size of the previous, play and next buttons.
+    pub button_size: f32,
+    pub button_color: String,
     /// The most room the title and artist take before being cut short.
     pub text_width: f32,
     pub art: Spot,
-    pub title: Spot,
-    pub artist: Spot,
     pub previous: Spot,
     pub play: Spot,
     pub next: Spot,
     pub bar: Spot,
-    pub elapsed: Spot,
-    pub total: Spot,
+    pub title: Label,
+    pub artist: Label,
+    pub elapsed: Label,
+    pub total: Label,
     pub frame: Frame,
 }
 
@@ -378,20 +452,33 @@ impl Default for PlayerCfg {
             show_art: true,
             show_progress: true,
             show_controls: true,
-            title_size: 18.0,
-            artist_size: 14.0,
             art_size: 0.0,
+            art_radius: 0.14,
             bar_width: 0.0,
+            bar_height: 4.0,
+            bar_color: "accent".to_owned(),
+            bar_track_opacity: 0.18,
+            button_size: 30.0,
+            button_color: "text".to_owned(),
             text_width: 270.0,
             art: Spot::default(),
-            title: Spot::default(),
-            artist: Spot::default(),
             previous: Spot::default(),
             play: Spot::default(),
             next: Spot::default(),
             bar: Spot::default(),
-            elapsed: Spot::default(),
-            total: Spot::default(),
+            title: Label::sized(18.0, 600),
+            artist: Label {
+                opacity: 0.66,
+                ..Label::sized(14.0, 400)
+            },
+            elapsed: Label {
+                opacity: 0.66,
+                ..Label::sized(12.0, 400)
+            },
+            total: Label {
+                opacity: 0.66,
+                ..Label::sized(12.0, 400)
+            },
         };
         cfg.arrange(PlayerLayout::Row);
         cfg
@@ -399,37 +486,46 @@ impl Default for PlayerCfg {
 }
 
 impl PlayerCfg {
-    pub fn spot_mut(&mut self, part: PlayerPart) -> &mut Spot {
+    /// The position of one element, whichever kind it is.
+    pub fn position_mut(&mut self, part: PlayerPart) -> (&mut f32, &mut f32) {
+        fn spot(s: &mut Spot) -> (&mut f32, &mut f32) {
+            (&mut s.x, &mut s.y)
+        }
+        fn label(l: &mut Label) -> (&mut f32, &mut f32) {
+            (&mut l.x, &mut l.y)
+        }
         match part {
-            PlayerPart::Art => &mut self.art,
-            PlayerPart::Title => &mut self.title,
-            PlayerPart::Artist => &mut self.artist,
-            PlayerPart::Previous => &mut self.previous,
-            PlayerPart::Play => &mut self.play,
-            PlayerPart::Next => &mut self.next,
-            PlayerPart::Bar => &mut self.bar,
-            PlayerPart::Elapsed => &mut self.elapsed,
-            PlayerPart::Total => &mut self.total,
+            PlayerPart::Art => spot(&mut self.art),
+            PlayerPart::Previous => spot(&mut self.previous),
+            PlayerPart::Play => spot(&mut self.play),
+            PlayerPart::Next => spot(&mut self.next),
+            PlayerPart::Bar => spot(&mut self.bar),
+            PlayerPart::Title => label(&mut self.title),
+            PlayerPart::Artist => label(&mut self.artist),
+            PlayerPart::Elapsed => label(&mut self.elapsed),
+            PlayerPart::Total => label(&mut self.total),
         }
     }
 
-    /// Resizes the card and places every element for one of the ready-made
-    /// layouts. Elements can be dragged anywhere afterwards.
+    /// Places every element for one of the ready-made layouts. Only positions
+    /// and the art and bar sizes change; fonts and colours are left alone.
     pub fn arrange(&mut self, layout: PlayerLayout) {
-        use Align::{Center, Right};
+        let put = |label: &mut Label, x: f32, y: f32, align: Align| {
+            (label.x, label.y, label.align) = (x, y, align);
+        };
         match layout {
             PlayerLayout::Row => {
                 (self.frame.w, self.frame.h) = (420, 132);
                 self.art_size = 104.0;
                 self.bar_width = 274.0;
                 self.art = Spot::at(14.0, 14.0);
-                self.title = Spot::at(132.0, 11.0);
-                self.artist = Spot::at(132.0, 36.0);
+                put(&mut self.title, 132.0, 11.0, Align::Left);
+                put(&mut self.artist, 132.0, 36.0, Align::Left);
                 self.previous = Spot::at(126.0, 60.0);
                 self.play = Spot::at(160.0, 60.0);
                 self.next = Spot::at(194.0, 60.0);
-                self.elapsed = Spot::at(132.0, 94.0);
-                self.total = Spot::anchored(406.0, 94.0, Right);
+                put(&mut self.elapsed, 132.0, 94.0, Align::Left);
+                put(&mut self.total, 406.0, 94.0, Align::Right);
                 self.bar = Spot::at(132.0, 114.0);
             }
             PlayerLayout::Centered => {
@@ -437,14 +533,14 @@ impl PlayerCfg {
                 self.art_size = 232.0;
                 self.bar_width = 232.0;
                 self.art = Spot::at(14.0, 14.0);
-                self.title = Spot::anchored(130.0, 256.0, Center);
-                self.artist = Spot::anchored(130.0, 281.0, Center);
+                put(&mut self.title, 130.0, 256.0, Align::Center);
+                put(&mut self.artist, 130.0, 281.0, Align::Center);
                 self.previous = Spot::at(81.0, 308.0);
                 self.play = Spot::at(115.0, 308.0);
                 self.next = Spot::at(149.0, 308.0);
                 self.bar = Spot::at(14.0, 352.0);
-                self.elapsed = Spot::at(14.0, 362.0);
-                self.total = Spot::anchored(246.0, 362.0, Right);
+                put(&mut self.elapsed, 14.0, 362.0, Align::Left);
+                put(&mut self.total, 246.0, 362.0, Align::Right);
             }
         }
     }
@@ -468,6 +564,8 @@ pub struct LyricsCfg {
     pub opacity: f32,
     pub mode: LyricsMode,
     pub align: Align,
+    /// Empty, or a font that is not available, uses the theme font.
+    pub font: String,
     pub size: f32,
     /// Font weight, 100 to 900.
     pub weight: u32,
@@ -505,6 +603,7 @@ impl Default for LyricsCfg {
             card: false,
             opacity: 1.0,
             mode: LyricsMode::Line,
+            font: String::new(),
             align: Align::Right,
             size: 30.0,
             weight: 700,
@@ -650,6 +749,54 @@ impl VisualizerCfg {
     }
 }
 
+/// Lays `over` on top of `base`, table by table.
+fn overlay(base: &mut toml::Table, over: toml::Table) {
+    for (key, value) in over {
+        match (base.get_mut(&key), value) {
+            (Some(toml::Value::Table(below)), toml::Value::Table(above)) => overlay(below, above),
+            (_, value) => {
+                base.insert(key, value);
+            }
+        }
+    }
+}
+
+/// Settings that used to be one key per widget and are now a key of each
+/// element: section, old key, element, new key. One old key can feed two
+/// elements.
+const MOVED_KEYS: [(&str, &str, &str, &str); 9] = [
+    ("clock", "day_font", "day", "font"),
+    ("clock", "day_size", "day", "size"),
+    ("clock", "time_font", "time", "font"),
+    ("clock", "time_font", "date", "font"),
+    ("clock", "time_size", "time", "size"),
+    ("clock", "time_weight", "time", "weight"),
+    ("clock", "text_size", "date", "size"),
+    ("player", "title_size", "title", "size"),
+    ("player", "artist_size", "artist", "size"),
+];
+
+/// Copies each old key to where it lives now, unless the new key is already
+/// set, so a file written by an earlier version keeps its sizes and fonts.
+fn carry_over_old_keys(user: &mut toml::Table) {
+    for (section, old, element, key) in MOVED_KEYS {
+        let Some(toml::Value::Table(section)) = user.get_mut(section) else {
+            continue;
+        };
+        let Some(value) = section.get(old).cloned() else {
+            continue;
+        };
+        let element = section
+            .entry(element)
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        if let toml::Value::Table(element) = element
+            && !element.contains_key(key)
+        {
+            element.insert(key.to_owned(), value);
+        }
+    }
+}
+
 /// One-click looks. A preset only touches appearance, never positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Preset {
@@ -674,7 +821,15 @@ impl Preset {
 
 impl Config {
     pub fn from_toml(text: &str) -> Result<Self, String> {
-        toml::from_str::<Config>(text)
+        let mut user: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
+        carry_over_old_keys(&mut user);
+        // The file is laid over the defaults key by key. A table that sets
+        // only some of an element's keys then keeps that element's own
+        // defaults for the rest, rather than a generic blank.
+        let mut merged = toml::Table::try_from(Config::default()).map_err(|e| e.to_string())?;
+        overlay(&mut merged, user);
+        merged
+            .try_into::<Config>()
             .map(Config::sanitized)
             .map_err(|e| e.to_string())
     }
@@ -716,24 +871,26 @@ impl Config {
         let c = &mut self.clock;
         frame(&mut c.frame);
         unit(&mut c.opacity);
-        range(&mut c.day_size, 8.0, 300.0, 34.0);
-        range(&mut c.time_size, 12.0, 400.0, 96.0);
-        range(&mut c.text_size, 8.0, 120.0, 20.0);
-        c.time_weight = c.time_weight.clamp(100, 900);
         for row in ClockRow::ALL {
-            c.spot_mut(row).sanitize();
+            c.label_mut(row).sanitize();
         }
 
         let p = &mut self.player;
         frame(&mut p.frame);
         unit(&mut p.opacity);
-        range(&mut p.title_size, 8.0, 72.0, 18.0);
-        range(&mut p.artist_size, 8.0, 72.0, 14.0);
+        unit(&mut p.bar_track_opacity);
         range(&mut p.art_size, 0.0, 1000.0, 104.0);
+        range(&mut p.art_radius, 0.0, 0.5, 0.14);
         range(&mut p.bar_width, 0.0, 4000.0, 274.0);
+        range(&mut p.bar_height, 1.0, 60.0, 4.0);
+        range(&mut p.button_size, 10.0, 200.0, 30.0);
         range(&mut p.text_width, 60.0, 4000.0, 270.0);
         for part in PlayerPart::ALL {
-            p.spot_mut(part).sanitize();
+            let (x, y) = p.position_mut(part);
+            sanitize_position(x, y);
+        }
+        for label in [&mut p.title, &mut p.artist, &mut p.elapsed, &mut p.total] {
+            label.sanitize();
         }
 
         let l = &mut self.lyrics;
@@ -949,30 +1106,63 @@ mod tests {
     }
 
     #[test]
-    fn one_element_moves_without_the_others() {
-        let cfg = Config::from_toml("[player.title]\nx = 300.0\ny = 5.0\n").unwrap();
-        let fresh = PlayerCfg::default();
-        assert_eq!((cfg.player.title.x, cfg.player.title.y), (300.0, 5.0));
-        assert_eq!(cfg.player.artist, fresh.artist);
-        assert_eq!(cfg.player.art, fresh.art);
+    fn one_key_of_one_element_changes_nothing_else() {
+        let cfg =
+            Config::from_toml("[player.title]\nx = 300.0\n[clock.day]\nsize = 60.0\n").unwrap();
+        let fresh = Config::default();
+        assert_eq!(cfg.player.title.x, 300.0);
+        // The rest of that element keeps its own defaults, not a blank's.
+        assert_eq!(cfg.player.title.y, fresh.player.title.y);
+        assert_eq!(cfg.player.title.size, fresh.player.title.size);
+        assert_eq!(cfg.player.artist, fresh.player.artist);
+        assert_eq!(cfg.player.art, fresh.player.art);
+        assert_eq!(cfg.clock.day.size, 60.0);
+        assert_eq!(cfg.clock.day.font, "Anurati");
+        assert!(cfg.clock.day.uppercase);
     }
 
     #[test]
-    fn the_centred_arrangement_centres_text_on_the_card() {
+    fn the_centred_arrangement_moves_things_and_restyles_nothing() {
         let mut p = PlayerCfg::default();
+        p.title.size = 31.0;
         p.arrange(PlayerLayout::Centered);
         assert_eq!(p.title.align, Align::Center);
         assert_eq!(p.title.x * 2.0, p.frame.w as f32);
         assert_eq!(p.art.x * 2.0 + p.art_size, p.frame.w as f32);
+        assert_eq!(p.title.size, 31.0);
 
+        p.title.size = PlayerCfg::default().title.size;
         p.arrange(PlayerLayout::Row);
         assert_eq!(p, PlayerCfg::default());
     }
 
     #[test]
     fn a_position_that_is_not_a_number_is_reset() {
-        let cfg = Config::from_toml("[clock.day]\nx = nan\ny = 1e9\n").unwrap();
+        let cfg = Config::from_toml("[clock.day]\nx = nan\ny = 1e9\nsize = -3.0\n").unwrap();
         assert_eq!((cfg.clock.day.x, cfg.clock.day.y), (0.0, 8000.0));
+        assert_eq!(cfg.clock.day.size, 6.0);
+    }
+
+    #[test]
+    fn sizes_and_fonts_from_an_older_file_carry_over() {
+        let cfg = Config::from_toml(
+            "[clock]\nday_size = 50.0\ntime_font = \"Inter\"\ntime_weight = 700\n[player]\ntitle_size = 22.0\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.clock.day.size, 50.0);
+        assert_eq!(cfg.clock.time.font, "Inter");
+        assert_eq!(cfg.clock.date.font, "Inter");
+        assert_eq!(cfg.clock.time.weight, 700);
+        assert_eq!(cfg.player.title.size, 22.0);
+        // Untouched by the old file.
+        assert_eq!(cfg.clock.day.font, "Anurati");
+    }
+
+    #[test]
+    fn a_new_key_beats_the_old_one_it_replaced() {
+        let cfg =
+            Config::from_toml("[clock]\nday_size = 50.0\n[clock.day]\nsize = 40.0\n").unwrap();
+        assert_eq!(cfg.clock.day.size, 40.0);
     }
 
     #[test]

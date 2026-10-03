@@ -43,16 +43,22 @@ const SWATCHES: [&str; 10] = [
     "#FFFFFF", "#1ED760", "#7C5CFF", "#21D4FD", "#FF3DCB", "#FF6B6B", "#FFB547", "#F9F871",
     "#101014", "#000000",
 ];
-/// Fonts for one row of the clock. The first two are the Mond skin's pair,
-/// which work once their files are in the app's `fonts` folder.
-const CLOCK_FONTS: [(&str, &str); 7] = [
-    ("", "Theme font"),
-    ("Anurati", "Anurati"),
-    ("Quicksand", "Quicksand"),
-    ("Segoe UI Variable Display", "Segoe UI Variable"),
-    ("Bahnschrift", "Bahnschrift"),
-    ("Cascadia Code", "Cascadia Code"),
-    ("Georgia", "Georgia"),
+/// Fonts every Windows 11 has, offered for any piece of text. Fonts in the
+/// app's own folder are listed ahead of these; anything else can be named
+/// in the config file.
+const SYSTEM_FONTS: [&str; 12] = [
+    "Segoe UI Variable Display",
+    "Segoe UI",
+    "Bahnschrift",
+    "Cascadia Code",
+    "Consolas",
+    "Georgia",
+    "Arial",
+    "Calibri",
+    "Verdana",
+    "Trebuchet MS",
+    "Times New Roman",
+    "Impact",
 ];
 const FONTS: [(&str, &str); 7] = [
     ("Segoe UI Variable Display", "Segoe UI Variable"),
@@ -103,10 +109,21 @@ const ALIGNS: [(Align, &str); 3] = [
 
 /// What the user did in the panel that the app has to act on.
 #[derive(Default)]
+/// What the panel needs to know about the app to draw itself.
+#[derive(Clone, Copy)]
+pub struct Status {
+    pub edit: bool,
+    pub hidden: bool,
+    pub autostart: bool,
+}
+
 pub struct Outcome {
     /// A setting changed and `cfg` holds the new value.
     pub changed: bool,
     pub toggle_edit: bool,
+    pub toggle_hidden: bool,
+    pub toggle_autostart: bool,
+    pub quit: bool,
     pub open_config: bool,
     /// This pass changed something the next pass has to show.
     pub redraw: bool,
@@ -159,17 +176,23 @@ impl View {
         cfg: &mut Config,
         (w, h): (f32, f32),
         accent: Rgba,
-        edit: bool,
+        status: Status,
         area: (i32, i32),
     ) -> Result<Outcome> {
         let mut outcome = Outcome::default();
         let font = cfg.theme.font.clone();
+        let own_fonts = gfx.own_fonts();
         gfx.fill_rect(rect(0.0, 0.0, w, h), BACKGROUND);
 
         let view = (TABS_HEIGHT, h - FOOTER_HEIGHT);
         let mut ui = Ui {
             g: &mut *gfx,
+            status,
+            toggle_hidden: false,
+            toggle_autostart: false,
+            quit: false,
             font: &font,
+            own_fonts: &own_fonts,
             accent,
             left: MARGIN,
             width: w - 2.0 * MARGIN,
@@ -228,8 +251,16 @@ impl View {
         let footer = h - FOOTER_HEIGHT;
         ui.g.fill_rect(rect(0.0, footer, w, 1.0), TRACK);
         let half = (w - 2.0 * MARGIN - 10.0) / 2.0;
-        let label = if edit { "Done editing" } else { "Edit layout" };
-        outcome.toggle_edit = ui.button(label, rect(MARGIN, footer + 14.0, half, 36.0), edit)?;
+        let label = if status.edit {
+            "Done editing"
+        } else {
+            "Edit layout"
+        };
+        let button = rect(MARGIN, footer + 14.0, half, 36.0);
+        outcome.toggle_edit = ui.button(label, button, status.edit)?;
+        outcome.toggle_hidden = ui.toggle_hidden;
+        outcome.toggle_autostart = ui.toggle_autostart;
+        outcome.quit = ui.quit;
         outcome.open_config = ui.button(
             "Open config file",
             rect(MARGIN + half + 10.0, footer + 14.0, half, 36.0),
@@ -350,13 +381,13 @@ impl Panel {
         cfg: &mut Config,
         scale: f32,
         accent: Rgba,
-        edit: bool,
+        status: Status,
         area: (i32, i32),
     ) -> Result<Outcome> {
         let size = (self.size.0 as f32 / scale, self.size.1 as f32 / scale);
         gfx.begin(&self.surface);
         gfx.set_transform(scale, 0.0, 0.0);
-        let painted = self.view.paint(gfx, cfg, size, accent, edit, area);
+        let painted = self.view.paint(gfx, cfg, size, accent, status, area);
         // The frame is ended whether or not painting succeeded.
         let ended = gfx.end(&self.surface);
         let outcome = painted?;
@@ -369,7 +400,14 @@ impl Panel {
 /// One frame of the immediate-mode UI.
 struct Ui<'a> {
     g: &'a mut Gfx,
+    status: Status,
+    /// What the General tab's app controls asked for.
+    toggle_hidden: bool,
+    toggle_autostart: bool,
+    quit: bool,
     font: &'a str,
+    /// Families loaded from the app's own fonts folder.
+    own_fonts: &'a [String],
     accent: Rgba,
     left: f32,
     width: f32,
@@ -676,6 +714,29 @@ impl Ui<'_> {
         Ok(())
     }
 
+    /// Picks a font: the theme's, one from the app's own folder, or one
+    /// that ships with Windows.
+    fn font_row(&mut self, label: &str, value: &mut String) -> Result<()> {
+        let own = self.own_fonts;
+        let options: Vec<(&str, &str)> = std::iter::once(("", "Theme font"))
+            .chain(own.iter().map(|name| (name.as_str(), name.as_str())))
+            .chain(SYSTEM_FONTS.iter().map(|name| (*name, *name)))
+            .collect();
+        self.choice_text(label, value, &options)
+    }
+
+    /// Every setting of one piece of text.
+    fn label_rows(&mut self, label: &mut Label) -> Result<()> {
+        self.font_row("Font", &mut label.font)?;
+        self.slider("Size", &mut label.size, 6.0, 240.0, 1.0)?;
+        self.slider_u32("Weight", &mut label.weight, 100, 900, 100)?;
+        self.color("Colour", &mut label.color, &THEME_COLORS)?;
+        self.slider("Opacity", &mut label.opacity, 0.0, 1.0, 0.02)?;
+        self.slider("Letter spacing", &mut label.spacing, 0.0, 1.0, 0.02)?;
+        self.toggle("Capitals", &mut label.uppercase)?;
+        self.choice("Grows from its", &mut label.align, &ALIGNS)
+    }
+
     /// A labelled row with one button. Returns whether it was clicked.
     fn action(&mut self, label: &str, button: &str) -> Result<bool> {
         let (_, control) = self.row(label, ROW)?;
@@ -765,7 +826,19 @@ fn general(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
         "Hide when Spotify is closed",
         &mut general.hide_without_spotify,
     )?;
-    ui.toggle("Global hotkeys", &mut general.hotkeys)
+    ui.toggle("Global hotkeys", &mut general.hotkeys)?;
+
+    // The tray icon has no menu, so what a menu would hold lives here.
+    ui.header("App")?;
+    let (mut hidden, mut autostart) = (ui.status.hidden, ui.status.autostart);
+    ui.toggle("Hide all widgets", &mut hidden)?;
+    ui.toggle("Start with Windows", &mut autostart)?;
+    ui.toggle_hidden = hidden != ui.status.hidden;
+    ui.toggle_autostart = autostart != ui.status.autostart;
+    if ui.action("Sonic Veil", "Quit")? {
+        ui.quit = true;
+    }
+    Ok(())
 }
 
 fn clock(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
@@ -773,34 +846,27 @@ fn clock(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     let c = &mut cfg.clock;
     ui.toggle("Show", &mut c.enabled)?;
     ui.toggle("Card behind it", &mut c.card)?;
-
-    ui.header("Rows")?;
     ui.note("In Edit layout, drag the day, time and date separately.")?;
-    ui.toggle("Show the day", &mut c.show_day)?;
-    ui.toggle("Show the time", &mut c.show_time)?;
-    ui.toggle("Show the date", &mut c.show_date)?;
-    let mut align = c.time.align;
-    ui.choice("Text grows from its", &mut align, &ALIGNS)?;
-    if align != c.time.align {
-        for row in ClockRow::ALL {
-            c.spot_mut(row).align = align;
-        }
-    }
     if ui.action("Positions", "Reset")? {
-        c.reset_spots();
+        c.reset_positions();
         ui.changed = true;
     }
 
-    ui.header("Text")?;
-    ui.choice_text("Time", &mut c.time_format, &TIME_FORMATS)?;
-    ui.choice_text("Day", &mut c.day_format, &DAY_FORMATS)?;
-    ui.choice_text("Date", &mut c.date_format, &DATE_FORMATS)?;
-    ui.choice_text("Day font", &mut c.day_font, &CLOCK_FONTS)?;
-    ui.choice_text("Time and date font", &mut c.time_font, &CLOCK_FONTS)?;
-    ui.slider("Day size", &mut c.day_size, 10.0, 160.0, 1.0)?;
-    ui.slider("Time size", &mut c.time_size, 24.0, 240.0, 2.0)?;
-    ui.slider("Date size", &mut c.text_size, 10.0, 60.0, 1.0)?;
-    ui.slider_u32("Time weight", &mut c.time_weight, 100, 900, 100)?;
+    ui.header("Day")?;
+    ui.toggle("Show", &mut c.show_day)?;
+    ui.choice_text("Shows", &mut c.day_format, &DAY_FORMATS)?;
+    ui.label_rows(&mut c.day)?;
+
+    ui.header("Time")?;
+    ui.toggle("Show", &mut c.show_time)?;
+    ui.choice_text("Shows", &mut c.time_format, &TIME_FORMATS)?;
+    ui.label_rows(&mut c.time)?;
+
+    ui.header("Date")?;
+    ui.toggle("Show", &mut c.show_date)?;
+    ui.choice_text("Shows", &mut c.date_format, &DATE_FORMATS)?;
+    ui.label_rows(&mut c.date)?;
+
     ui.placement(Kind::Clock, cfg, |cfg| &mut cfg.clock.opacity)
 }
 
@@ -817,9 +883,6 @@ fn player(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
             (PlayerBackground::None, "None"),
         ],
     )?;
-    ui.toggle("Album art", &mut p.show_art)?;
-    ui.toggle("Progress bar", &mut p.show_progress)?;
-    ui.toggle("Buttons", &mut p.show_controls)?;
 
     ui.header("Arrangement")?;
     ui.note("In Edit layout, drag any element on its own.")?;
@@ -832,8 +895,28 @@ fn player(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
             ui.changed = true;
         }
     }
-    ui.slider("Album art size", &mut p.art_size, 16.0, 600.0, 2.0)?;
-    ui.slider("Progress bar length", &mut p.bar_width, 20.0, 1200.0, 2.0)?;
+
+    ui.header("Album art")?;
+    ui.toggle("Show", &mut p.show_art)?;
+    ui.slider("Size", &mut p.art_size, 16.0, 600.0, 2.0)?;
+    ui.slider("Corner rounding", &mut p.art_radius, 0.0, 0.5, 0.02)?;
+
+    ui.header("Progress bar")?;
+    ui.toggle("Show bar and times", &mut p.show_progress)?;
+    ui.slider("Length", &mut p.bar_width, 20.0, 1200.0, 2.0)?;
+    ui.slider("Thickness", &mut p.bar_height, 1.0, 40.0, 1.0)?;
+    ui.color("Colour", &mut p.bar_color, &THEME_COLORS)?;
+    ui.slider("Unplayed part", &mut p.bar_track_opacity, 0.0, 1.0, 0.02)?;
+
+    ui.header("Buttons")?;
+    ui.toggle("Show", &mut p.show_controls)?;
+    ui.slider("Size", &mut p.button_size, 14.0, 120.0, 1.0)?;
+    ui.color("Colour", &mut p.button_color, &THEME_COLORS)?;
+
+    ui.header("Title")?;
+    ui.label_rows(&mut p.title)?;
+    ui.header("Artist")?;
+    ui.label_rows(&mut p.artist)?;
     ui.slider(
         "Room for title and artist",
         &mut p.text_width,
@@ -841,10 +924,11 @@ fn player(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
         1200.0,
         10.0,
     )?;
+    ui.header("Time played")?;
+    ui.label_rows(&mut p.elapsed)?;
+    ui.header("Track length")?;
+    ui.label_rows(&mut p.total)?;
 
-    ui.header("Text")?;
-    ui.slider("Title size", &mut p.title_size, 10.0, 48.0, 1.0)?;
-    ui.slider("Artist size", &mut p.artist_size, 9.0, 40.0, 1.0)?;
     ui.placement(Kind::Player, cfg, |cfg| &mut cfg.player.opacity)
 }
 
@@ -862,6 +946,7 @@ fn lyrics(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
         ],
     )?;
     ui.choice("Align", &mut l.align, &ALIGNS)?;
+    ui.font_row("Font", &mut l.font)?;
     ui.slider("Text size", &mut l.size, 12.0, 96.0, 1.0)?;
     ui.slider_u32("Weight", &mut l.weight, 100, 900, 100)?;
     ui.slider_u32("Lines above", &mut l.lines_before, 0, 6, 1)?;

@@ -1,44 +1,18 @@
-//! The notification-area icon and its menu.
+//! The notification-area icon. Double-clicking it opens the settings panel,
+//! which is where everything is controlled from; there is no menu.
 
-use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject};
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::{HSTRING, PCWSTR, Result};
+use windows::core::Result;
 
 use crate::window::WM_APP_TRAY;
 
 const ICON_SIDE: usize = 32;
-const TIP: &str = "Sonic Veil";
-
-/// One line of the tray menu. An `id` of 0 is a separator.
-pub struct Item<'a> {
-    pub id: u32,
-    pub label: &'a str,
-    pub checked: bool,
-}
-
-impl<'a> Item<'a> {
-    pub const SEPARATOR: Item<'static> = Item {
-        id: 0,
-        label: "",
-        checked: false,
-    };
-
-    pub fn new(id: u32, label: &'a str) -> Self {
-        Self {
-            id,
-            label,
-            checked: false,
-        }
-    }
-
-    pub fn check(id: u32, label: &'a str, checked: bool) -> Self {
-        Self { id, label, checked }
-    }
-}
+const TIP: &str = "Sonic Veil: double-click for settings";
 
 /// Three rounded bars on a violet tile, drawn into premultiplied BGRA. Made
 /// in code so the exe needs no resource file.
@@ -132,44 +106,6 @@ impl Tray {
 
     pub fn remove(&self) {
         let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &self.data()) };
-    }
-
-    /// Shows the menu at the pointer. The chosen item arrives as `WM_COMMAND`.
-    pub fn menu(&self, items: &[Item]) -> Result<()> {
-        unsafe {
-            let menu = CreatePopupMenu()?;
-            for item in items {
-                if item.id == 0 {
-                    AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
-                } else {
-                    let state = if item.checked {
-                        MF_CHECKED
-                    } else {
-                        MF_UNCHECKED
-                    };
-                    AppendMenuW(
-                        menu,
-                        MF_STRING | state,
-                        item.id as usize,
-                        &HSTRING::from(item.label),
-                    )?;
-                }
-            }
-            let mut pointer = POINT::default();
-            GetCursorPos(&mut pointer)?;
-            // Without this the menu does not close when the user clicks elsewhere.
-            let _ = SetForegroundWindow(self.hwnd);
-            let _ = TrackPopupMenu(
-                menu,
-                TPM_RIGHTBUTTON | TPM_BOTTOMALIGN,
-                pointer.x,
-                pointer.y,
-                None,
-                self.hwnd,
-                None,
-            );
-            DestroyMenu(menu)
-        }
     }
 }
 

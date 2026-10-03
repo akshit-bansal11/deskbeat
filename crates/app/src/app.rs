@@ -10,8 +10,8 @@ use std::process::Command;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
-use sonic_veil_core::color::{Rgba, parse_hex, with_alpha};
-use sonic_veil_core::config::{Align, Config, Layer, Preset};
+use sonic_veil_core::color::{Rgba, parse_hex};
+use sonic_veil_core::config::{Config, Layer};
 use sonic_veil_core::lrclib::Query;
 use sonic_veil_core::timefmt::LocalTime;
 use windows::Win32::Foundation::{
@@ -35,11 +35,11 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{HSTRING, Result, w};
 
 use crate::capture::{self, Audio};
-use crate::gfx::{Gfx, Surface, TextStyle, rect};
+use crate::gfx::{Gfx, Surface};
 use crate::lyrics::{self, Lyrics, LyricsState};
 use crate::media::{self, Cmd, MediaState};
-use crate::settings::Panel;
-use crate::tray::{Item, Tray};
+use crate::settings::{Panel, Status};
+use crate::tray::Tray;
 use crate::widgets::{Action, Ctx, Kind, Part, Wake, Widget};
 use crate::window::{self, Cover, Event, Mouse, Z};
 use crate::{Notify, config_dir, log, now_ms};
@@ -55,21 +55,6 @@ const HOTKEYS: [(i32, u32); 5] = [
     (HOTKEY_SETTINGS, b'S' as u32),
     (HOTKEY_OFFSET_EARLIER, VK_UP.0 as u32),
     (HOTKEY_OFFSET_LATER, VK_DOWN.0 as u32),
-];
-
-const CMD_SETTINGS: u32 = 100;
-const CMD_EDIT: u32 = 101;
-const CMD_OPEN_CONFIG: u32 = 102;
-const CMD_AUTOSTART: u32 = 103;
-const CMD_HIDE: u32 = 104;
-const CMD_QUIT: u32 = 105;
-const CMD_WIDGET: u32 = 200;
-const CMD_PRESET: u32 = 300;
-const CMD_LAYER: u32 = 400;
-const LAYERS: [(Layer, &str); 3] = [
-    (Layer::Desktop, "On the desktop"),
-    (Layer::Normal, "Like a normal window"),
-    (Layer::Top, "Always on top"),
 ];
 
 /// Spotify green, used when the accent is automatic and there is no album art.
@@ -198,6 +183,10 @@ struct App {
     /// Positions are on the screen, not in the window: the window itself
     /// moves as it re-wraps around the element being dragged.
     drag: Option<(usize, u8, f32, f32)>,
+    /// The element under the pointer in edit mode, which is outlined.
+    hot: Option<(Kind, u8)>,
+    /// Whether Windows starts the app at sign-in, as last read from the registry.
+    autostart: bool,
 }
 
 fn read_config(path: &Path) -> (Config, String, bool) {
@@ -307,6 +296,8 @@ pub fn run() -> Result<()> {
         device_lost: false,
         quit: false,
         drag: None,
+        hot: None,
+        autostart: autostart_enabled(),
     };
 
     for kind in Kind::ALL {
@@ -448,7 +439,11 @@ impl App {
             }
             if host.dirty {
                 host.dirty = false;
-                if let Err(error) = draw_host(&mut self.gfx, host, &ctx, self.scale, self.edit) {
+                let lit = self
+                    .hot
+                    .filter(|(kind, _)| self.edit && *kind == host.kind)
+                    .map(|(_, id)| id);
+                if let Err(error) = draw_host(&mut self.gfx, host, &ctx, self.scale, lit) {
                     log(&format!("drawing {} failed: {error}", host.kind.label()));
                     self.device_lost = true;
                 }
@@ -534,10 +529,7 @@ impl App {
         );
         let (left, top) = frame.origin(area.0, area.1);
         for id in 0..kind.part_count() {
-            if let Some(spot) = kind.spot_mut(&mut self.cfg, id) {
-                spot.x -= dx;
-                spot.y -= dy;
-            }
+            kind.nudge(&mut self.cfg, id, -dx, -dy);
         }
         let frame = kind.frame_mut(&mut self.cfg);
         (frame.w, frame.h) = (w, h);
@@ -575,7 +567,12 @@ impl App {
         let Some(panel) = &mut self.settings else {
             return;
         };
-        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, accent, self.edit, area);
+        let status = Status {
+            edit: self.edit,
+            hidden: self.hidden,
+            autostart: self.autostart,
+        };
+        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, accent, status, area);
         let outcome = match drawn {
             Ok(outcome) => outcome,
             Err(error) => {
@@ -591,6 +588,17 @@ impl App {
         }
         if outcome.toggle_edit {
             self.toggle_edit();
+        }
+        if outcome.toggle_hidden {
+            self.toggle_hidden();
+        }
+        if outcome.toggle_autostart {
+            set_autostart(!self.autostart);
+            // Read back rather than assumed: the registry write can fail.
+            self.autostart = autostart_enabled();
+        }
+        if outcome.quit {
+            self.quit = true;
         }
         if outcome.open_config {
             self.open_config_file();
@@ -640,10 +648,8 @@ impl App {
             }
             Event::TaskbarCreated => self.tray.add(),
             Event::ShowSettings => self.open_settings(),
-            Event::Tray(WM_RBUTTONUP | WM_CONTEXTMENU) => self.show_menu(),
-            Event::Tray(WM_LBUTTONUP) => self.open_settings(),
+            Event::Tray(WM_LBUTTONDBLCLK) => self.open_settings(),
             Event::Tray(_) => {}
-            Event::Command(id) => self.command(id),
             Event::Hotkey(id) => self.hotkey(id),
             Event::Foreground(hwnd) => self.foreground_changed(hwnd),
             Event::Moved(hwnd) => self.widget_moved(hwnd),
@@ -771,18 +777,26 @@ impl App {
                     .find(|(_, r)| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
                     .map(|(id, _)| *id);
                 self.drag = grabbed.map(|id| (index, id, sx, sy));
+                self.set_hot(index, grabbed);
             }
             Mouse::Move => {
                 let Some((host, id, last_x, last_y)) = self.drag else {
+                    // Not dragging: outline whatever the pointer is over.
+                    let over = self.hosts[index]
+                        .widget
+                        .parts()
+                        .iter()
+                        .rev()
+                        .find(|(_, r)| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+                        .map(|(id, _)| *id);
+                    self.set_hot(index, over);
                     return;
                 };
                 if host != index {
                     return;
                 }
-                if let Some(spot) = self.hosts[index].kind.spot_mut(&mut self.cfg, id) {
-                    spot.x += sx - last_x;
-                    spot.y += sy - last_y;
-                }
+                let kind = self.hosts[index].kind;
+                kind.nudge(&mut self.cfg, id, sx - last_x, sy - last_y);
                 self.drag = Some((host, id, sx, sy));
                 self.hosts[index].dirty = true;
             }
@@ -795,7 +809,22 @@ impl App {
                     }
                 }
             }
-            Mouse::Leave => {}
+            Mouse::Leave => {
+                if self.drag.is_none() {
+                    self.set_hot(index, None);
+                }
+            }
+        }
+    }
+
+    /// Records which element of a widget the pointer is over, redrawing the
+    /// widget when that changes.
+    fn set_hot(&mut self, index: usize, part: Option<u8>) {
+        let kind = self.hosts[index].kind;
+        let hot = part.map(|id| (kind, id));
+        if hot != self.hot {
+            self.hot = hot;
+            self.hosts[index].dirty = true;
         }
     }
 
@@ -886,78 +915,11 @@ impl App {
         }
     }
 
-    fn command(&mut self, id: u32) {
-        match id {
-            CMD_SETTINGS => self.open_settings(),
-            CMD_EDIT => self.toggle_edit(),
-            CMD_OPEN_CONFIG => self.open_config_file(),
-            CMD_AUTOSTART => set_autostart(!autostart_enabled()),
-            CMD_HIDE => self.toggle_hidden(),
-            CMD_QUIT => self.quit = true,
-            _ => {
-                if let Some(&kind) = Kind::ALL.get(id.wrapping_sub(CMD_WIDGET) as usize) {
-                    let enabled = kind.enabled_mut(&mut self.cfg);
-                    *enabled = !*enabled;
-                } else if let Some(&preset) = Preset::ALL.get(id.wrapping_sub(CMD_PRESET) as usize)
-                {
-                    self.cfg.apply_preset(preset);
-                } else if let Some(&(layer, _)) = LAYERS.get(id.wrapping_sub(CMD_LAYER) as usize) {
-                    self.cfg.general.layer = layer;
-                } else {
-                    return;
-                }
-                self.save_config();
-                self.apply_config();
-            }
-        }
-    }
-
-    fn show_menu(&mut self) {
-        let mut items = vec![
-            Item::new(CMD_SETTINGS, "Settings\tCtrl+Alt+S"),
-            Item::check(CMD_EDIT, "Edit layout\tCtrl+Alt+E", self.edit),
-            Item::check(CMD_HIDE, "Hide widgets\tCtrl+Alt+H", self.hidden),
-            Item::SEPARATOR,
-        ];
-        for (i, kind) in Kind::ALL.into_iter().enumerate() {
-            items.push(Item::check(
-                CMD_WIDGET + i as u32,
-                kind.label(),
-                kind.enabled(&self.cfg),
-            ));
-        }
-        items.push(Item::SEPARATOR);
-        for (i, (layer, label)) in LAYERS.into_iter().enumerate() {
-            let current = self.cfg.general.layer == layer;
-            items.push(Item::check(CMD_LAYER + i as u32, label, current));
-        }
-        items.push(Item::SEPARATOR);
-        let presets: Vec<String> = Preset::ALL
-            .iter()
-            .map(|preset| format!("Look: {}", preset.name()))
-            .collect();
-        for (i, label) in presets.iter().enumerate() {
-            items.push(Item::new(CMD_PRESET + i as u32, label));
-        }
-        items.push(Item::SEPARATOR);
-        items.push(Item::new(CMD_OPEN_CONFIG, "Open config file"));
-        items.push(Item::check(
-            CMD_AUTOSTART,
-            "Start with Windows",
-            autostart_enabled(),
-        ));
-        items.push(Item::SEPARATOR);
-        items.push(Item::new(CMD_QUIT, "Quit"));
-
-        if let Err(error) = self.tray.menu(&items) {
-            log(&format!("could not show the tray menu: {error}"));
-        }
-    }
-
     fn toggle_edit(&mut self) {
         self.edit = !self.edit;
         self.raised = false;
         self.drag = None;
+        self.hot = None;
         if !self.edit {
             for host in &self.hosts {
                 window::set_parts(host.hwnd, &[], false);
@@ -1169,56 +1131,17 @@ impl App {
     }
 }
 
-/// Draws one widget into its window, with the edit-mode frame on top.
-fn draw_host(gfx: &mut Gfx, host: &mut Host, ctx: &Ctx, scale: f32, edit: bool) -> Result<()> {
+/// Draws one widget into its window. `lit` is the element under the pointer
+/// in edit mode, which gets the only outline there is: nothing else marks a
+/// widget's bounds.
+fn draw_host(gfx: &mut Gfx, host: &mut Host, ctx: &Ctx, scale: f32, lit: Option<u8>) -> Result<()> {
     let (w, h) = (host.size.0 as f32 / scale, host.size.1 as f32 / scale);
     gfx.begin(&host.surface);
     gfx.set_transform(scale, 0.0, 0.0);
     let drawn = host.widget.draw(gfx, w, h, ctx);
-    let framed = if edit {
-        draw_edit_frame(gfx, host.kind, w, h, ctx, host.widget.parts())
-    } else {
-        Ok(())
-    };
-    gfx.end(&host.surface).and(drawn).and(framed)
-}
-
-/// The outline and label shown while the layout is being edited.
-pub fn draw_edit_frame(
-    gfx: &mut Gfx,
-    kind: Kind,
-    w: f32,
-    h: f32,
-    ctx: &Ctx,
-    parts: &[Part],
-) -> Result<()> {
-    // Each element that can be dragged on its own gets a box of its own.
-    for (_, r) in parts {
-        gfx.stroke_round(*r, 3.0, with_alpha(ctx.accent, 0.75), 1.0);
+    let outline = host.widget.parts().iter().find(|(id, _)| Some(*id) == lit);
+    if let Some((_, r)) = outline {
+        gfx.stroke_round(*r, 3.0, ctx.accent, 1.5);
     }
-    if kind.fitted() {
-        // No box of its own: its elements are the whole of it.
-        return Ok(());
-    }
-    let radius = ctx.cfg.theme.card_radius.min(w.min(h) / 2.0);
-    gfx.fill_round(rect(0.0, 0.0, w, h), radius, with_alpha(ctx.accent, 0.10));
-    gfx.stroke_round(rect(1.0, 1.0, w - 2.0, h - 2.0), radius, ctx.accent, 2.0);
-
-    let label = format!("{}  {} × {}", kind.label(), w.round(), h.round());
-    let style = TextStyle {
-        font: &ctx.cfg.theme.font,
-        size: 12.0,
-        weight: 600,
-        align: Align::Left,
-        wrap: false,
-    };
-    let layout = gfx.layout(&label, &style, w - 20.0, 20.0)?;
-    let (text_w, text_h) = Gfx::measure(&layout);
-    gfx.fill_round(
-        rect(8.0, 8.0, text_w + 16.0, text_h + 6.0),
-        (text_h + 6.0) / 2.0,
-        ctx.accent,
-    );
-    gfx.draw_text(&layout, 16.0, 11.0, [0.0, 0.0, 0.0, 0.92], false);
-    Ok(())
+    gfx.end(&host.surface).and(drawn)
 }

@@ -570,6 +570,24 @@ impl Gfx {
 
     // ----- text ------------------------------------------------------------
 
+    /// The families loaded from the app's own `fonts` folder.
+    pub fn own_fonts(&self) -> Vec<String> {
+        let Some(fonts) = &self.fonts else {
+            return Vec::new();
+        };
+        unsafe {
+            (0..fonts.GetFontFamilyCount())
+                .filter_map(|index| {
+                    let names = fonts.GetFontFamily(index).ok()?.GetFamilyNames().ok()?;
+                    let len = names.GetStringLength(0).ok()? as usize;
+                    let mut name = vec![0u16; len + 1];
+                    names.GetString(0, &mut name).ok()?;
+                    Some(String::from_utf16_lossy(&name[..len]))
+                })
+                .collect()
+        }
+    }
+
     /// Whether a font family can be used: from the app's own folder or
     /// installed in Windows. DirectWrite substitutes silently when it cannot.
     pub fn has_font(&self, family: &str) -> bool {
