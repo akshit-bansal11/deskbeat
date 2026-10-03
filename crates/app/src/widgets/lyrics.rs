@@ -155,13 +155,7 @@ impl LyricsView {
             named_color(&cfg.inactive_color, ctx),
             cfg.inactive_opacity * cfg.opacity,
         );
-        g.draw_text_fx(
-            &layout,
-            pad,
-            (h - height) / 2.0,
-            color,
-            &decoration(ctx, color[3]),
-        );
+        g.draw_text_fx(&layout, pad, (h - height) / 2.0, color, &decoration(ctx));
         Ok(())
     }
 }
@@ -175,18 +169,15 @@ fn named_color(name: &str, ctx: &Ctx) -> Rgba {
     }
 }
 
-/// The shadow and outline for a line whose text is drawn at opacity
-/// `strength`. They follow the text: a full-strength outline around a dimmed
-/// line would be louder than the words inside it.
-fn decoration(ctx: &Ctx, strength: f32) -> TextFx {
+/// The shadow and outline for lyric text, at full strength. Drawing fades
+/// them together with the line they belong to.
+fn decoration(ctx: &Ctx) -> TextFx {
     let cfg = &ctx.cfg.lyrics;
     let color =
         |hex: &str, alpha: f32| with_alpha(parse_hex(hex).unwrap_or([0.0, 0.0, 0.0, 1.0]), alpha);
     TextFx {
-        shadow: (cfg.shadow_opacity > 0.0)
-            .then(|| color(&cfg.shadow_color, cfg.shadow_opacity * strength)),
-        stroke: (cfg.stroke_width > 0.0)
-            .then(|| (color(&cfg.stroke_color, strength), cfg.stroke_width)),
+        shadow: (cfg.shadow_opacity > 0.0).then(|| color(&cfg.shadow_color, cfg.shadow_opacity)),
+        stroke: (cfg.stroke_width > 0.0).then(|| (color(&cfg.stroke_color, 1.0), cfg.stroke_width)),
     }
 }
 
@@ -355,7 +346,7 @@ impl Widget for LyricsView {
             };
             let by_word = current && cfg.mode == LyricsMode::Word && synced.is_some();
             let color = with_alpha(mix(inactive, active, glow), fade);
-            g.draw_text_fx(layout, pad, y, color, &decoration(ctx, color[3]));
+            g.draw_text_fx(layout, pad, y, color, &decoration(ctx));
 
             if by_word
                 && let (Some(lines), Some(word)) = (synced, self.word)

@@ -681,20 +681,43 @@ impl Gfx {
             .collect()
     }
 
-    /// Draws text over an optional shadow and outline.
+    /// Draws text over an optional shadow and outline. The decoration's own
+    /// colours are given at full strength; everything is faded together by
+    /// the alpha of `c`.
     ///
     /// The outline is the text stamped eight times around itself. A true
     /// outline needs the glyph geometry; for the widths a lyric line wants,
     /// stamping is indistinguishable and a fraction of the code.
     pub fn draw_text_fx(&self, layout: &IDWriteTextLayout, x: f32, y: f32, c: Rgba, fx: &TextFx) {
+        let alpha = c[3];
+        // Translucent stamps pile up where they overlap and come out nearly
+        // opaque. With an outline, the whole thing is drawn solid into a
+        // layer and the layer is faded instead.
+        let layered = fx.stroke.is_some() && alpha < 0.999;
+        let scale = if layered { 1.0 } else { alpha };
         let reach = fx.stroke.map_or(0.0, |(_, width)| width);
         unsafe {
+            if layered {
+                let everywhere = D2D_RECT_F {
+                    left: f32::MIN,
+                    top: f32::MIN,
+                    right: f32::MAX,
+                    bottom: f32::MAX,
+                };
+                let params = D2D1_LAYER_PARAMETERS {
+                    contentBounds: everywhere,
+                    maskTransform: Matrix3x2::identity(),
+                    opacity: alpha,
+                    ..Default::default()
+                };
+                self.rt.PushLayer(&params, None);
+            }
             if let Some(shadow) = fx.shadow {
                 for (offset, share) in [(1.0, 1.0), (3.0, 0.42)] {
                     self.rt.DrawTextLayout(
                         point(x, y + offset + reach),
                         layout,
-                        self.solid([shadow[0], shadow[1], shadow[2], shadow[3] * share]),
+                        self.solid([shadow[0], shadow[1], shadow[2], shadow[3] * share * scale]),
                         D2D1_DRAW_TEXT_OPTIONS_NONE,
                     );
                 }
@@ -704,7 +727,7 @@ impl Gfx {
                     self.rt.DrawTextLayout(
                         point(x + dx * width, y + dy * width),
                         layout,
-                        self.solid(color),
+                        self.solid([color[0], color[1], color[2], color[3] * scale]),
                         D2D1_DRAW_TEXT_OPTIONS_NONE,
                     );
                 }
@@ -712,9 +735,12 @@ impl Gfx {
             self.rt.DrawTextLayout(
                 point(x, y),
                 layout,
-                self.solid(c),
+                self.solid([c[0], c[1], c[2], scale]),
                 D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
             );
+            if layered {
+                self.rt.PopLayer();
+            }
         }
     }
 
