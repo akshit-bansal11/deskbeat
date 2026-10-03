@@ -92,15 +92,37 @@ pub struct Gfx {
 }
 
 fn create_d3d() -> Result<ID3D11Device> {
+    // An always-on widget must not keep a laptop's discrete GPU awake, so the
+    // low-power adapter is asked for by name rather than left to the default.
+    let frugal: Option<IDXGIAdapter> = unsafe {
+        CreateDXGIFactory1::<IDXGIFactory6>()
+            .and_then(|factory| {
+                factory.EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_MINIMUM_POWER)
+            })
+            .ok()
+    };
+    // The drawing here is a few rectangles and some text. Driver worker
+    // threads would cost memory and buy nothing.
+    let flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT
+        | D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS;
+
     let mut device = None;
-    // WARP is the software fallback: a CI runner or a remote session has no GPU.
-    for driver in [D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP] {
+    let attempts = [
+        (frugal.as_ref(), D3D_DRIVER_TYPE_UNKNOWN),
+        (None, D3D_DRIVER_TYPE_HARDWARE),
+        // The software fallback: a CI runner or a remote session has no GPU.
+        (None, D3D_DRIVER_TYPE_WARP),
+    ];
+    for (adapter, driver) in attempts {
+        if adapter.is_none() && driver == D3D_DRIVER_TYPE_UNKNOWN {
+            continue;
+        }
         let created = unsafe {
             D3D11CreateDevice(
-                None,
+                adapter,
                 driver,
                 HMODULE::default(),
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                flags,
                 None,
                 D3D11_SDK_VERSION,
                 Some(&mut device),
@@ -126,7 +148,8 @@ impl Gfx {
                 .CreateDevice(&dxgi_device)?
                 .CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
             let devices = Devices {
-                dxgi_factory: CreateDXGIFactory1()?,
+                // The factory the device's own adapter came from.
+                dxgi_factory: dxgi_device.GetAdapter()?.GetParent()?,
                 dcomp: DCompositionCreateDevice(&dxgi_device)?,
                 dxgi_device,
             };

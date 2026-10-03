@@ -79,27 +79,30 @@ fn fake_art() -> Art {
     }
 }
 
-/// A chord with a falling spectrum, so the bars look like music rather than a test tone.
+/// Many partials from 45 Hz to 14 kHz, louder in the bass and with a few
+/// humps, so the bars have the broad falling shape of music rather than the
+/// isolated spikes of a test tone.
 fn fake_audio() -> Audio {
     let audio = Audio::offline();
-    let tones = [
-        (55.0, 0.30),
-        (110.0, 0.24),
-        (220.0, 0.15),
-        (440.0, 0.11),
-        (660.0, 0.06),
-        (990.0, 0.05),
-        (1760.0, 0.035),
-        (3520.0, 0.02),
-        (5200.0, 0.012),
-        (9000.0, 0.006),
-    ];
+    let partials: Vec<(f32, f32, f32)> = (0..140)
+        .map(|k| {
+            let k = k as f32;
+            let hump = 0.5 + 0.5 * (k * 0.21).sin();
+            (
+                45.0 * 1.042f32.powf(k),
+                0.05 / (1.0 + k / 14.0) * (0.25 + 0.75 * hump * hump),
+                k * k * 0.37,
+            )
+        })
+        .collect();
     let samples: Vec<f32> = (0..4096)
         .map(|n| {
             let t = n as f32 / 48_000.0;
-            tones
+            partials
                 .iter()
-                .map(|(hz, amplitude)| amplitude * (std::f32::consts::TAU * hz * t).sin())
+                .map(|(hz, amplitude, phase)| {
+                    amplitude * (std::f32::consts::TAU * hz * t + phase).sin()
+                })
                 .sum()
         })
         .collect();

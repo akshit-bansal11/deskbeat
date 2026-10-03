@@ -284,7 +284,7 @@ impl Default for LyricsCfg {
     fn default() -> Self {
         Self {
             enabled: true,
-            frame: Frame::new(Anchor::Right, 72, 0, 620, 420),
+            frame: Frame::new(Anchor::Right, 72, -80, 620, 370),
             card: false,
             opacity: 1.0,
             mode: LyricsMode::Line,
@@ -370,12 +370,12 @@ impl Default for VisualizerCfg {
     fn default() -> Self {
         Self {
             enabled: true,
-            frame: Frame::new(Anchor::Bottom, 0, 40, 760, 180),
+            frame: Frame::new(Anchor::BottomRight, 72, 56, 620, 170),
             card: false,
             opacity: 0.9,
             style: VisualizerStyle::Bars,
             source: AudioSource::Spotify,
-            bars: 56,
+            bars: 48,
             gap: 0.38,
             radius: 0.5,
             symmetric: false,
@@ -620,6 +620,37 @@ mod tests {
             frame.set_origin(123, 456, 1920, 1040);
             assert_eq!(frame.anchor, anchor);
             assert_eq!(frame.origin(1920, 1040), (123, 456), "{anchor:?}");
+        }
+    }
+
+    #[test]
+    fn the_default_layout_fits_a_small_screen_without_overlap() {
+        // A 1080p laptop at 150% scaling, less the taskbar: the smallest
+        // desktop this is likely to meet.
+        let (w, h) = (1280, 672);
+        let cfg = Config::default();
+        let boxes: Vec<[i32; 4]> = [
+            cfg.clock.frame,
+            cfg.player.frame,
+            cfg.lyrics.frame,
+            cfg.visualizer.frame,
+        ]
+        .iter()
+        .map(|frame| {
+            let (x, y) = frame.origin(w, h);
+            [x, y, x + frame.w as i32, y + frame.h as i32]
+        })
+        .collect();
+
+        for (i, a) in boxes.iter().enumerate() {
+            assert!(
+                a[0] >= 0 && a[1] >= 0 && a[2] <= w && a[3] <= h,
+                "{a:?} is off screen"
+            );
+            for b in &boxes[i + 1..] {
+                let apart = a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1];
+                assert!(apart, "{a:?} overlaps {b:?}");
+            }
         }
     }
 

@@ -45,21 +45,27 @@ pub struct LyricsState {
     pub lyrics: Lyrics,
 }
 
+/// Finds lyrics for a track: the disk cache first, LRCLIB otherwise. Blocks
+/// on the network, so it belongs on a worker thread.
+pub fn lookup(query: &Query) -> Lyrics {
+    let path = cache_path(query);
+    let record = match read_cache(&path) {
+        Some(known) => known,
+        None => match download(query) {
+            Some(answer) => {
+                write_cache(&path, &answer);
+                answer
+            }
+            // Offline or LRCLIB is down: say missing now, and ask again next time.
+            None => None,
+        },
+    };
+    to_lyrics(record, query.duration_ms)
+}
+
 pub fn fetch(query: Query, track_gen: u64, shared: Arc<Mutex<LyricsState>>, notify: Notify) {
     std::thread::spawn(move || {
-        let path = cache_path(&query);
-        let record = match read_cache(&path) {
-            Some(known) => known,
-            None => match download(&query) {
-                Some(answer) => {
-                    write_cache(&path, &answer);
-                    answer
-                }
-                // Offline or LRCLIB is down: say missing now, and ask again next time.
-                None => None,
-            },
-        };
-        let lyrics = to_lyrics(record, query.duration_ms);
+        let lyrics = lookup(&query);
         if let Ok(mut state) = shared.lock()
             && state.track_gen == track_gen
         {

@@ -1,9 +1,14 @@
 //! Sonic Veil: desktop widgets for Spotify.
 //!
 //! `sonic-veil` runs the app. `sonic-veil --snapshot <dir>` renders the
-//! widgets to PNG files from made-up data. `sonic-veil --probe` prints what
-//! Windows reports about Spotify for a few seconds, for diagnosing a machine
-//! where a widget stays empty; redirect its output to a file to read it.
+//! widgets to PNG files from made-up data.
+//!
+//! Three diagnostics for a machine where a widget stays empty. There is no
+//! console, so redirect their output to a file to read it:
+//! - `--probe` prints what Windows reports about Spotify, and the level of
+//!   Spotify's audio, for eight seconds.
+//! - `--probe-system` does the same but listens to everything the PC plays.
+//! - `--probe-lyrics <title> <artist>` looks one track up on LRCLIB.
 
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
@@ -99,12 +104,33 @@ impl Notify {
     }
 }
 
+/// Looks one track up the way the lyrics widget would, and prints what came back.
+fn probe_lyrics(title: &str, artist: &str) {
+    let query = sonic_veil_core::lrclib::Query {
+        title: title.to_owned(),
+        artist: artist.to_owned(),
+        album: String::new(),
+        duration_ms: 0,
+    };
+    match lyrics::lookup(&query) {
+        lyrics::Lyrics::Synced(lines) => {
+            println!("synced, {} lines", lines.len());
+            for line in lines.iter().take(4) {
+                println!("  {:>6}ms  {}", line.start_ms, line.text);
+            }
+        }
+        lyrics::Lyrics::Plain(lines) => println!("plain, {} lines", lines.len()),
+        lyrics::Lyrics::Instrumental => println!("instrumental"),
+        _ => println!("no lyrics found"),
+    }
+}
+
 /// Prints what the media session and the audio capture report, twice a second.
-fn probe() -> Result<()> {
+fn probe(source: AudioSource) -> Result<()> {
     let shared = Arc::new(Mutex::new(media::MediaState::default()));
     let _controls = media::spawn(shared.clone(), Notify::none());
     let audio = capture::spawn(Notify::none())?;
-    audio.set_source(Some(AudioSource::Spotify));
+    audio.set_source(Some(source));
     println!("spotify root process: {:?}", capture::spotify_pid());
 
     let mut samples = vec![0.0f32; 2048];
@@ -143,7 +169,13 @@ fn main() {
         Some("--snapshot") => {
             snapshot::run(Path::new(args.get(1).map_or("snapshots", String::as_str)))
         }
-        Some("--probe") => probe(),
+        Some("--probe") => probe(AudioSource::Spotify),
+        Some("--probe-system") => probe(AudioSource::System),
+        Some("--probe-lyrics") => {
+            let arg = |i: usize| args.get(i).map_or("", String::as_str);
+            probe_lyrics(arg(1), arg(2));
+            Ok(())
+        }
         _ => app::run(),
     };
     if let Err(error) = result {

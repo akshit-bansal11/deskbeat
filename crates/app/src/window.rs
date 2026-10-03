@@ -397,32 +397,54 @@ pub fn is_shell(hwnd: HWND) -> bool {
     )
 }
 
-/// True when `hwnd` is an app covering its whole monitor: a game, a video, F11.
-pub fn is_fullscreen(hwnd: HWND) -> bool {
+/// How much of its monitor a window takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cover {
+    None,
+    /// Hides the desktop, but an always-on-top widget still belongs above it.
+    Maximized,
+    /// A game, a video, F11: nothing should be drawn over it.
+    Fullscreen,
+}
+
+/// An opaque id for the monitor a window is on.
+pub fn monitor(hwnd: HWND) -> isize {
+    unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) }.0 as isize
+}
+
+/// Whether `hwnd` is an app covering its monitor. With an auto-hiding
+/// taskbar a maximized window has the same bounds as a fullscreen one, so
+/// the two are told apart by the maximized state, not by size.
+pub fn cover(hwnd: HWND) -> Cover {
     if hwnd.is_invalid() || is_shell(hwnd) {
-        return false;
+        return Cover::None;
+    }
+    if unsafe { IsZoomed(hwnd) }.as_bool() {
+        return Cover::Maximized;
     }
     let mut window = RECT::default();
-    let mut monitor = MONITORINFO {
+    let mut info = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
     unsafe {
         if GetWindowRect(hwnd, &mut window).is_err()
-            || !GetMonitorInfoW(
-                MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
-                &mut monitor,
-            )
-            .as_bool()
+            || !GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut info)
+                .as_bool()
         {
-            return false;
+            return Cover::None;
         }
     }
-    let screen = monitor.rcMonitor;
-    window.left <= screen.left
+    let screen = info.rcMonitor;
+    let fills = window.left <= screen.left
         && window.top <= screen.top
         && window.right >= screen.right
-        && window.bottom >= screen.bottom
+        && window.bottom >= screen.bottom;
+    if fills {
+        Cover::Fullscreen
+    } else {
+        Cover::None
+    }
 }
 
 unsafe extern "system" fn find_icon_host(hwnd: HWND, lp: LPARAM) -> BOOL {

@@ -38,7 +38,7 @@ use crate::media::{self, Cmd, MediaState};
 use crate::settings::Panel;
 use crate::tray::{Item, Tray};
 use crate::widgets::{Action, Ctx, Kind, Wake, Widget};
-use crate::window::{self, Event, Mouse, Z};
+use crate::window::{self, Cover, Event, Mouse, Z};
 use crate::{Notify, config_dir, log, now_ms};
 
 const HOTKEY_EDIT: i32 = 1;
@@ -138,6 +138,8 @@ struct Host {
     /// Size in physical pixels.
     size: (i32, i32),
     visible: bool,
+    /// Hidden behind a window that covers its monitor: not ticked, not drawn.
+    paused: bool,
     dirty: bool,
     due: Due,
 }
@@ -177,8 +179,9 @@ struct App {
     scale: f32,
     edit: bool,
     hidden: bool,
-    /// A fullscreen app is in front.
-    fullscreen: bool,
+    /// How much of its monitor the window in front covers, and which monitor.
+    cover: Cover,
+    cover_monitor: isize,
     /// Show Desktop is active and the widgets were lifted above the desktop.
     raised: bool,
     desktop_recheck_at: Option<f64>,
@@ -286,7 +289,8 @@ pub fn run() -> Result<()> {
         scale: 1.0,
         edit: false,
         hidden: false,
-        fullscreen: false,
+        cover: Cover::None,
+        cover_monitor: 0,
         raised: false,
         desktop_recheck_at: None,
         device_lost: false,
@@ -302,6 +306,7 @@ pub fn run() -> Result<()> {
             widget: kind.create(),
             size: (100, 100),
             visible: false,
+            paused: false,
             dirty: true,
             due: Due::Now,
         });
@@ -311,6 +316,8 @@ pub fn run() -> Result<()> {
         app.save_config();
     }
     app.apply_config();
+    // Whatever is already in front may be covering the desktop.
+    app.foreground_changed(unsafe { GetForegroundWindow() });
     app.run_loop();
     if app.save_at.is_some() {
         app.save_config();
@@ -336,6 +343,10 @@ impl App {
                 }
             }
             self.drain_events();
+            if self.quit {
+                // Checked here, not only at the top: the wait below can be long.
+                break;
+            }
 
             match self.frame() {
                 // Blocks until the compositor's next refresh.
@@ -392,7 +403,6 @@ impl App {
             self.draw_settings();
         }
 
-        let paused = self.fullscreen && self.cfg.general.pause_on_fullscreen && !self.edit;
         let (time, ms_to_next_second) = local_time();
         let ctx = Ctx {
             cfg: &self.cfg,
@@ -410,7 +420,7 @@ impl App {
 
         let mut wake = Wake::Idle;
         for host in &mut self.hosts {
-            if !host.visible || paused {
+            if !host.visible || host.paused {
                 continue;
             }
             if host.due == Due::Now || matches!(host.due, Due::At(at) if now >= at) {
@@ -679,9 +689,9 @@ impl App {
         if hwnd == self.main || own_panel || self.host_index(hwnd).is_some() {
             return;
         }
-        let fullscreen = window::is_fullscreen(hwnd);
-        if fullscreen != self.fullscreen {
-            self.fullscreen = fullscreen;
+        let front = (window::cover(hwnd), window::monitor(hwnd));
+        if front != (self.cover, self.cover_monitor) {
+            (self.cover, self.cover_monitor) = front;
             self.sync_windows();
             self.redraw_all();
         }
@@ -938,8 +948,8 @@ impl App {
         let scale = self.scale;
         let px = |dip: f32| (dip * scale).round() as i32;
         let layer = self.cfg.general.layer;
-        let hide_for_fullscreen =
-            self.fullscreen && self.cfg.general.pause_on_fullscreen && layer == Layer::Top;
+        let pausing =
+            self.cfg.general.pause_on_fullscreen && !self.edit && self.cover != Cover::None;
 
         // Unpinned while reordering, or the pin would undo it.
         window::set_pin_bottom(false);
@@ -969,12 +979,19 @@ impl App {
                 host.dirty = true;
             }
 
+            // A widget under a window that covers its monitor cannot be seen,
+            // so it stops running. An always-on-top widget is above a maximized
+            // window and keeps going; under true fullscreen it is hidden.
+            host.paused = pausing
+                && window::monitor(host.hwnd) == self.cover_monitor
+                && (layer != Layer::Top || self.cover == Cover::Fullscreen);
+
             let has_content = !host.kind.needs_spotify()
                 || self.media.present
                 || !self.cfg.general.hide_without_spotify;
             let visible = host.kind.enabled(&self.cfg)
                 && !self.hidden
-                && !hide_for_fullscreen
+                && !(host.paused && layer == Layer::Top)
                 && (self.edit || has_content);
             if visible != host.visible {
                 host.visible = visible;
