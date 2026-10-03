@@ -6,6 +6,23 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The visualizer can span the whole width of the screen, which is now the
+  default, with up to 512 bars.
+- The visualizer can be flipped left to right and upside down.
+- A centred player layout: album art, title, artist, buttons and progress
+  stacked on the centre line.
+- Separate fonts for the clock's day row and its time and date rows.
+- Fonts placed in `%APPDATA%sonic-veilonts` can be used without
+  installing them in Windows.
+
+### Changed
+
+- The clock's day and time default to Anurati and Quicksand, the pairing the
+  Mond Rainmeter skin uses. Without those fonts the theme font is used.
+- Widget width and height can be set up to the size of the screen.
+
 ## [0.1.0] - 2026-10-03
 
 First build. A pre-release: see "Not yet verified" below before relying on it.

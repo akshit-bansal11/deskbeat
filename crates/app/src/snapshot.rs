@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use sonic_veil_core::color::{accent_from_bgra, downsample_bgra};
-use sonic_veil_core::config::{Config, LyricsMode, Preset, VisualizerStyle};
+use sonic_veil_core::config::{Config, LyricsMode, PlayerLayout, Preset, VisualizerStyle};
 use sonic_veil_core::lrc::parse_lrc;
 use sonic_veil_core::timefmt::LocalTime;
 use sonic_veil_core::timing::normalize_lines;
@@ -154,9 +154,18 @@ pub fn run(dir: &Path) -> Result<()> {
     variant.visualizer.style = VisualizerStyle::Wave;
     variant.visualizer.symmetric = true;
     variant.visualizer.card = true;
+    variant.visualizer.flip_x = true;
+    variant.player.layout = PlayerLayout::Centered;
+    (variant.player.frame.w, variant.player.frame.h) = (260, 400);
     variant.clock.time_format = "%l:%M %p".to_owned();
     looks.push(("word-wave".to_owned(), variant, false));
     looks.push(("edit-mode".to_owned(), Config::default(), true));
+    // Bars hanging from the top edge of the screen.
+    let mut hanging = Config::default();
+    hanging.visualizer.flip_y = true;
+    hanging.visualizer.frame.anchor = sonic_veil_core::config::Anchor::Top;
+    hanging.clock.frame.y = 200;
+    looks.push(("flipped".to_owned(), hanging, false));
 
     for (name, cfg, edit) in &looks {
         let path = dir.join(format!("{name}.png"));
@@ -260,7 +269,7 @@ fn scene(
         if !kind.enabled(cfg) {
             continue;
         }
-        let frame = kind.frame(cfg);
+        let frame = kind.placed(cfg, WIDTH as i32);
         let (x, y) = frame.origin(WIDTH as i32, HEIGHT as i32);
         let (w, h) = (frame.w as f32, frame.h as f32);
         let mut widget = kind.create();

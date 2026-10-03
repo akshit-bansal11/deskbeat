@@ -46,6 +46,8 @@ Everything is stored in one file, which you can also edit by hand. It reloads wh
 %APPDATA%\sonic-veil\config.toml
 ```
 
+To use a font without installing it in Windows, put its `.ttf` or `.otf` file in `%APPDATA%sonic-veilonts` and restart the app. The clock's day and time default to Anurati and Quicksand, the pairing the Mond Rainmeter skin uses; they are not shipped with the app, and the theme font is used until they are in that folder.
+
 The file takes a few things the panel does not: any hex colour, any installed font, and a hand-written clock format (`%H:%M`, `%l:%M %p`, `%A, %e %B` and so on).
 
 Widgets can sit on the desktop under your windows (the default), behave like a normal window, or stay on top of everything.

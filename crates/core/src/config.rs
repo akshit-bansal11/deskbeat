@@ -177,8 +177,14 @@ pub struct ClockCfg {
     pub day_format: String,
     pub time_format: String,
     pub date_format: String,
+    /// Font of the day row. Empty, or a font that is not installed, uses the
+    /// theme font.
+    pub day_font: String,
+    /// Font of the time and date rows, with the same fallback.
+    pub time_font: String,
+    pub day_size: f32,
     pub time_size: f32,
-    /// Size of the day and date rows.
+    /// Size of the date row.
     pub text_size: f32,
     /// Font weight of the time, 100 to 900.
     pub time_weight: u32,
@@ -196,6 +202,10 @@ impl Default for ClockCfg {
             day_format: "%A".to_owned(),
             time_format: "%H:%M".to_owned(),
             date_format: "%e %B %Y".to_owned(),
+            // The pairing the Mond Rainmeter skin uses.
+            day_font: "Anurati".to_owned(),
+            time_font: "Quicksand".to_owned(),
+            day_size: 34.0,
             time_size: 96.0,
             text_size: 20.0,
             time_weight: 300,
@@ -214,10 +224,21 @@ pub enum PlayerBackground {
     None,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlayerLayout {
+    /// Art on the left, text and controls beside it.
+    #[default]
+    Row,
+    /// Art, title, artist, controls and progress stacked on the centre line.
+    Centered,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PlayerCfg {
     pub enabled: bool,
+    pub layout: PlayerLayout,
     pub opacity: f32,
     pub background: PlayerBackground,
     pub show_art: bool,
@@ -232,7 +253,9 @@ impl Default for PlayerCfg {
     fn default() -> Self {
         Self {
             enabled: true,
-            frame: Frame::new(Anchor::BottomLeft, 56, 56, 420, 132),
+            layout: PlayerLayout::Row,
+            // Sits just above the full-width visualizer.
+            frame: Frame::new(Anchor::BottomLeft, 56, 196, 420, 132),
             opacity: 1.0,
             background: PlayerBackground::ArtBlur,
             show_art: true,
@@ -351,6 +374,13 @@ pub struct VisualizerCfg {
     pub radius: f32,
     /// Bass in the middle, treble at both edges.
     pub symmetric: bool,
+    /// Treble on the left instead of the right.
+    pub flip_x: bool,
+    /// Bars hang from the top edge instead of standing on the bottom.
+    pub flip_y: bool,
+    /// Span the whole width of the screen, ignoring the frame's width and
+    /// horizontal offset.
+    pub full_width: bool,
     pub color: VisualizerColor,
     pub color_a: String,
     pub color_b: String,
@@ -370,15 +400,18 @@ impl Default for VisualizerCfg {
     fn default() -> Self {
         Self {
             enabled: true,
-            frame: Frame::new(Anchor::BottomRight, 72, 56, 620, 170),
+            frame: Frame::new(Anchor::Bottom, 0, 0, 760, 170),
             card: false,
             opacity: 0.9,
             style: VisualizerStyle::Bars,
             source: AudioSource::Spotify,
-            bars: 48,
+            bars: 120,
             gap: 0.38,
             radius: 0.5,
             symmetric: false,
+            flip_x: false,
+            flip_y: false,
+            full_width: true,
             color: VisualizerColor::Accent,
             color_a: "#7C5CFF".to_owned(),
             color_b: "#21D4FD".to_owned(),
@@ -389,6 +422,30 @@ impl Default for VisualizerCfg {
             min_hz: 40.0,
             max_hz: 15_000.0,
             tilt: 3.5,
+        }
+    }
+}
+
+/// More bars than this are thinner than a pixel on any current display.
+pub const MAX_BARS: u32 = 512;
+
+impl VisualizerCfg {
+    /// Where the visualizer goes on a screen `area_w` wide: its own frame,
+    /// or that frame stretched edge to edge when `full_width` is set.
+    pub fn placed(&self, area_w: i32) -> Frame {
+        if !self.full_width {
+            return self.frame;
+        }
+        use Anchor::*;
+        Frame {
+            anchor: match self.frame.anchor {
+                TopLeft | Top | TopRight => TopLeft,
+                Left | Center | Right => Left,
+                BottomLeft | Bottom | BottomRight => BottomLeft,
+            },
+            x: 0,
+            w: area_w.max(1) as u32,
+            ..self.frame
         }
     }
 }
@@ -459,6 +516,7 @@ impl Config {
         let c = &mut self.clock;
         frame(&mut c.frame);
         unit(&mut c.opacity);
+        range(&mut c.day_size, 8.0, 300.0, 34.0);
         range(&mut c.time_size, 12.0, 400.0, 96.0);
         range(&mut c.text_size, 8.0, 120.0, 20.0);
         c.time_weight = c.time_weight.clamp(100, 900);
@@ -492,7 +550,7 @@ impl Config {
         range(&mut v.min_hz, 20.0, 2000.0, 40.0);
         range(&mut v.max_hz, 2000.0, 22_000.0, 15_000.0);
         range(&mut v.tilt, 0.0, 9.0, 3.5);
-        v.bars = v.bars.clamp(4, 256);
+        v.bars = v.bars.clamp(4, MAX_BARS);
         v.fps = v.fps.clamp(10, 240);
 
         self
@@ -585,7 +643,7 @@ mod tests {
             "[visualizer]\nbars = 100000\nfps = 0\ngap = 7.5\n[lyrics]\nsize = -4.0\n[clock.frame]\nw = 1\n",
         )
         .unwrap();
-        assert_eq!(cfg.visualizer.bars, 256);
+        assert_eq!(cfg.visualizer.bars, MAX_BARS);
         assert_eq!(cfg.visualizer.fps, 10);
         assert_eq!(cfg.visualizer.gap, 0.9);
         assert_eq!(cfg.lyrics.size, 10.0);
@@ -633,7 +691,7 @@ mod tests {
             cfg.clock.frame,
             cfg.player.frame,
             cfg.lyrics.frame,
-            cfg.visualizer.frame,
+            cfg.visualizer.placed(w),
         ]
         .iter()
         .map(|frame| {
@@ -652,6 +710,27 @@ mod tests {
                 assert!(apart, "{a:?} overlaps {b:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_full_width_visualizer_spans_the_screen_at_its_own_height() {
+        let mut v = VisualizerCfg {
+            frame: Frame::new(Anchor::Bottom, 40, 12, 300, 90),
+            ..VisualizerCfg::default()
+        };
+        assert!(v.full_width);
+        let placed = v.placed(1920);
+        assert_eq!(placed.origin(1920, 1040), (0, 1040 - 90 - 12));
+        assert_eq!((placed.w, placed.h), (1920, 90));
+
+        v.full_width = false;
+        assert_eq!(v.placed(1920), v.frame);
+    }
+
+    #[test]
+    fn the_bar_count_is_capped() {
+        let cfg = Config::from_toml("[visualizer]\nbars = 100000\n").unwrap();
+        assert_eq!(cfg.visualizer.bars, MAX_BARS);
     }
 
     #[test]

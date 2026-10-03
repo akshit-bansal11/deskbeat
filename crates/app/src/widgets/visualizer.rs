@@ -223,26 +223,34 @@ impl Widget for Visualizer {
         let radius = bar_width * cfg.radius;
         let floor = MIN_BAR_HEIGHT.min(height);
 
+        // Flipping sideways reads the bands in reverse; flipping upside down
+        // hangs the shape from the top edge instead of standing it on the bottom.
+        let level_at = |i: usize| {
+            let slot = if cfg.flip_x { bars - 1 - i } else { i };
+            self.bar_level(slot, bars, cfg.symmetric)
+        };
+        let base = if cfg.flip_y { top } else { top + height };
+        let rise = if cfg.flip_y { 1.0 } else { -1.0 };
+
         if cfg.style == VisualizerStyle::Wave {
             let mut points = Vec::with_capacity(bars + 2);
-            points.push((left, top + height));
+            points.push((left, base));
             for i in 0..bars {
-                let level = self.bar_level(i, bars, cfg.symmetric);
                 points.push((
                     left + pitch * (i as f32 + 0.5),
-                    top + height - (level * height).max(floor),
+                    base + rise * (level_at(i) * height).max(floor),
                 ));
             }
-            points.push((left + width, top + height));
-            return g.fill_curve(&points, top + height, brush);
+            points.push((left + width, base));
+            return g.fill_curve(&points, base, brush);
         }
 
         for i in 0..bars {
-            let level = self.bar_level(i, bars, cfg.symmetric);
-            let bar_height = (level * height).max(floor);
+            let bar_height = (level_at(i) * height).max(floor);
             let x = left + pitch * i as f32 + (pitch - bar_width) / 2.0;
             let y = match cfg.style {
                 VisualizerStyle::Mirror => top + (height - bar_height) / 2.0,
+                _ if cfg.flip_y => top,
                 _ => top + height - bar_height,
             };
             g.fill_round_with(

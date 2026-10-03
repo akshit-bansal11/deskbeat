@@ -124,12 +124,13 @@ impl Kind {
         }
     }
 
-    pub fn frame(self, cfg: &Config) -> Frame {
+    /// Where the widget goes on a screen `area_w` wide.
+    pub fn placed(self, cfg: &Config, area_w: i32) -> Frame {
         match self {
             Kind::Clock => cfg.clock.frame,
             Kind::Player => cfg.player.frame,
             Kind::Lyrics => cfg.lyrics.frame,
-            Kind::Visualizer => cfg.visualizer.frame,
+            Kind::Visualizer => cfg.visualizer.placed(area_w),
         }
     }
 

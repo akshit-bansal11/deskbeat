@@ -1,7 +1,7 @@
 //! Now playing: art, title, artist, transport buttons and a progress bar.
 
-use sonic_veil_core::color::with_alpha;
-use sonic_veil_core::config::{Align, PlayerBackground};
+use sonic_veil_core::color::{Rgba, with_alpha};
+use sonic_veil_core::config::{Align, PlayerBackground, PlayerLayout};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::ID2D1Bitmap;
 use windows::core::Result;
@@ -13,6 +13,9 @@ use crate::media::BLUR_SIDE;
 const PAD: f32 = 14.0;
 const GAP: f32 = 14.0;
 const BUTTON: f32 = 30.0;
+const BUTTON_GAP: f32 = 4.0;
+const TIME_SIZE: f32 = 12.0;
+const IDLE_MESSAGE: &str = "Play something on Spotify";
 const BAR_HEIGHT: f32 = 4.0;
 /// Extra distance above and below the bar that still counts as a click on it.
 const BAR_SLOP: f32 = 9.0;
@@ -55,30 +58,6 @@ impl Default for Player {
             buttons: [D2D_RECT_F::default(); 3],
             bar: D2D_RECT_F::default(),
         }
-    }
-}
-
-impl Player {
-    fn icon(
-        &self,
-        g: &mut Gfx,
-        glyph: &str,
-        size: f32,
-        at: D2D_RECT_F,
-        color: [f32; 4],
-    ) -> Result<()> {
-        let style = TextStyle {
-            font: ICON_FONT,
-            size,
-            weight: 400,
-            align: Align::Center,
-            wrap: false,
-        };
-        let (bw, bh) = (at.right - at.left, at.bottom - at.top);
-        let layout = g.layout(glyph, &style, bw, bh)?;
-        let height = Gfx::measure(&layout).1;
-        g.draw_text(&layout, at.left, at.top + (bh - height) / 2.0, color, false);
-        Ok(())
     }
 }
 
@@ -133,8 +112,6 @@ impl Widget for Player {
         let theme = &ctx.cfg.theme;
         let media = ctx.media;
         let o = p.opacity;
-        let text = with_alpha(ctx.text, o);
-        let dim = with_alpha(ctx.text, 0.66 * o);
 
         if self.art_gen != Some(media.art_gen) {
             self.art_gen = Some(media.art_gen);
@@ -163,119 +140,274 @@ impl Widget for Player {
             }
             _ => draw_card(g, w, h, ctx, o),
         }
-        let shadow = theme.text_shadow && p.background == PlayerBackground::None;
+        self.buttons = [D2D_RECT_F::default(); 3];
+        self.bar = D2D_RECT_F::default();
+        let look = Look {
+            text: with_alpha(ctx.text, o),
+            dim: with_alpha(ctx.text, 0.66 * o),
+            shadow: theme.text_shadow && p.background == PlayerBackground::None,
+            opacity: o,
+            art_radius: (radius - PAD / 2.0).max(4.0),
+        };
+        match p.layout {
+            PlayerLayout::Row => self.draw_row(g, w, h, ctx, &look),
+            PlayerLayout::Centered => self.draw_centered(g, w, h, ctx, &look),
+        }
+    }
+}
 
-        // Album art.
+/// Colours and flags shared by every part of one draw.
+struct Look {
+    text: Rgba,
+    dim: Rgba,
+    shadow: bool,
+    opacity: f32,
+    art_radius: f32,
+}
+
+fn style<'a>(ctx: &'a Ctx, size: f32, weight: u32, align: Align) -> TextStyle<'a> {
+    TextStyle {
+        font: &ctx.cfg.theme.font,
+        size,
+        weight,
+        align,
+        wrap: false,
+    }
+}
+
+fn icon(g: &mut Gfx, glyph: &str, size: f32, at: D2D_RECT_F, color: Rgba) -> Result<()> {
+    let style = TextStyle {
+        font: ICON_FONT,
+        size,
+        weight: 400,
+        align: Align::Center,
+        wrap: false,
+    };
+    let (bw, bh) = (at.right - at.left, at.bottom - at.top);
+    let layout = g.layout(glyph, &style, bw, bh)?;
+    let height = Gfx::measure(&layout).1;
+    g.draw_text(&layout, at.left, at.top + (bh - height) / 2.0, color, false);
+    Ok(())
+}
+
+impl Player {
+    fn draw_art(&self, g: &mut Gfx, frame: D2D_RECT_F, look: &Look) -> Result<()> {
+        let side = frame.right - frame.left;
+        let radius = look.art_radius.min(side / 2.0);
+        match &self.art {
+            Some(art) => g.fill_round_bitmap(art, frame, radius, look.opacity),
+            None => {
+                g.fill_round(frame, radius, [1.0, 1.0, 1.0, 0.09 * look.opacity]);
+                icon(g, ICON_NOTE, side * 0.34, frame, look.dim)
+            }
+        }
+    }
+
+    /// The three transport buttons in a row starting at `x`.
+    fn draw_controls(
+        &mut self,
+        g: &mut Gfx,
+        x: f32,
+        top: f32,
+        ctx: &Ctx,
+        look: &Look,
+    ) -> Result<()> {
+        let play = if ctx.media.playing {
+            ICON_PAUSE
+        } else {
+            ICON_PLAY
+        };
+        for (i, glyph) in [ICON_PREVIOUS, play, ICON_NEXT].into_iter().enumerate() {
+            let button = rect(x + i as f32 * (BUTTON + BUTTON_GAP), top, BUTTON, BUTTON);
+            if self.hover == Some(i) {
+                g.fill_circle(
+                    button.left + BUTTON / 2.0,
+                    top + BUTTON / 2.0,
+                    BUTTON / 2.0,
+                    [1.0, 1.0, 1.0, 0.14 * look.opacity],
+                );
+            }
+            let size = if i == 1 { 17.0 } else { 14.0 };
+            icon(g, glyph, size, button, look.text)?;
+            self.buttons[i] = button;
+        }
+        Ok(())
+    }
+
+    /// The progress bar with its top edge at `top`. Returns the position shown.
+    fn draw_bar(
+        &mut self,
+        g: &mut Gfx,
+        x: f32,
+        top: f32,
+        width: f32,
+        ctx: &Ctx,
+        look: &Look,
+    ) -> f64 {
+        let media = ctx.media;
+        let position = media.position_now(ctx.now_ms);
+        let fraction = if media.duration_ms > 0.0 {
+            (position / media.duration_ms).clamp(0.0, 1.0) as f32
+        } else {
+            0.0
+        };
+        let bar = rect(x, top, width, BAR_HEIGHT);
+        g.fill_round(bar, BAR_HEIGHT / 2.0, [1.0, 1.0, 1.0, 0.18 * look.opacity]);
+        if fraction > 0.0 {
+            let filled = rect(x, top, (width * fraction).max(BAR_HEIGHT), BAR_HEIGHT);
+            g.fill_round(
+                filled,
+                BAR_HEIGHT / 2.0,
+                with_alpha(ctx.accent, look.opacity),
+            );
+        }
+        self.bar = bar;
+        position
+    }
+
+    /// Art on the left, everything else stacked to its right.
+    fn draw_row(&mut self, g: &mut Gfx, w: f32, h: f32, ctx: &Ctx, look: &Look) -> Result<()> {
+        let p = &ctx.cfg.player;
+        let media = ctx.media;
+
         let mut x = PAD;
         if p.show_art {
             let side = h - 2.0 * PAD;
-            let frame = rect(PAD, PAD, side, side);
-            let art_radius = (radius - PAD / 2.0).clamp(4.0, side / 2.0);
-            match &self.art {
-                Some(art) => g.fill_round_bitmap(art, frame, art_radius, o)?,
-                None => {
-                    g.fill_round(frame, art_radius, [1.0, 1.0, 1.0, 0.09 * o]);
-                    self.icon(g, ICON_NOTE, side * 0.34, frame, dim)?;
-                }
-            }
+            self.draw_art(g, rect(PAD, PAD, side, side), look)?;
             x += side + GAP;
         }
         let text_w = (w - x - PAD).max(1.0);
 
-        self.buttons = [D2D_RECT_F::default(); 3];
-        self.bar = D2D_RECT_F::default();
-
         if !media.present {
-            let style = TextStyle {
-                font: &theme.font,
-                size: p.artist_size,
-                weight: 400,
-                align: Align::Left,
-                wrap: true,
-            };
-            let layout = g.layout("Play something on Spotify", &style, text_w, h)?;
+            let mut idle = style(ctx, p.artist_size, 400, Align::Left);
+            idle.wrap = true;
+            let layout = g.layout(IDLE_MESSAGE, &idle, text_w, h)?;
             let height = Gfx::measure(&layout).1;
-            g.draw_text(&layout, x, (h - height) / 2.0, dim, shadow);
+            g.draw_text(&layout, x, (h - height) / 2.0, look.dim, look.shadow);
             return Ok(());
         }
 
-        // Title and artist.
-        let title_style = TextStyle {
-            font: &theme.font,
-            size: p.title_size,
-            weight: 600,
-            align: Align::Left,
-            wrap: false,
-        };
-        let title = g.layout(&media.title, &title_style, text_w, h)?;
+        let title = g.layout(
+            &media.title,
+            &style(ctx, p.title_size, 600, Align::Left),
+            text_w,
+            h,
+        )?;
         let title_h = Gfx::measure(&title).1;
-        g.draw_text(&title, x, PAD - 3.0, text, shadow);
+        g.draw_text(&title, x, PAD - 3.0, look.text, look.shadow);
+        let artist = g.layout(
+            &media.artist,
+            &style(ctx, p.artist_size, 400, Align::Left),
+            text_w,
+            h,
+        )?;
+        g.draw_text(&artist, x, PAD - 3.0 + title_h, look.dim, look.shadow);
 
-        let artist_style = TextStyle {
-            size: p.artist_size,
-            weight: 400,
-            ..title_style
-        };
-        let artist = g.layout(&media.artist, &artist_style, text_w, h)?;
-        g.draw_text(&artist, x, PAD - 3.0 + title_h, dim, shadow);
-
-        // Progress bar along the bottom.
         let mut bottom = h - PAD;
         if p.show_progress {
-            let bar = rect(x, bottom - BAR_HEIGHT, text_w, BAR_HEIGHT);
-            let position = media.position_now(ctx.now_ms);
-            let fraction = if media.duration_ms > 0.0 {
-                (position / media.duration_ms).clamp(0.0, 1.0) as f32
-            } else {
-                0.0
-            };
-            g.fill_round(bar, BAR_HEIGHT / 2.0, [1.0, 1.0, 1.0, 0.18 * o]);
-            if fraction > 0.0 {
-                let filled = rect(x, bar.top, (text_w * fraction).max(BAR_HEIGHT), BAR_HEIGHT);
-                g.fill_round(filled, BAR_HEIGHT / 2.0, with_alpha(ctx.accent, o));
-            }
-            self.bar = bar;
-            bottom = bar.top - 6.0;
-
-            let time_style = TextStyle {
-                size: 12.0,
-                weight: 400,
-                align: Align::Right,
-                ..title_style
-            };
+            let position = self.draw_bar(g, x, bottom - BAR_HEIGHT, text_w, ctx, look);
+            bottom -= BAR_HEIGHT + 6.0;
             let label = format!(
                 "{} / {}",
                 clock_text(position),
                 clock_text(media.duration_ms)
             );
-            let time = g.layout(&label, &time_style, text_w, h)?;
+            let time = g.layout(&label, &style(ctx, TIME_SIZE, 400, Align::Right), text_w, h)?;
             let time_h = Gfx::measure(&time).1;
             g.draw_text(
                 &time,
                 x,
-                bottom - time_h - (BUTTON - time_h) / 2.0,
-                dim,
-                shadow,
+                bottom - (BUTTON + time_h) / 2.0,
+                look.dim,
+                look.shadow,
             );
         }
-
-        // Transport buttons.
         if p.show_controls && h >= MIN_HEIGHT_FOR_CONTROLS {
-            let top = bottom - BUTTON;
-            let play = if media.playing { ICON_PAUSE } else { ICON_PLAY };
-            for (i, glyph) in [ICON_PREVIOUS, play, ICON_NEXT].into_iter().enumerate() {
-                let button = rect(x - 6.0 + i as f32 * (BUTTON + 4.0), top, BUTTON, BUTTON);
-                if self.hover == Some(i) {
-                    g.fill_circle(
-                        button.left + BUTTON / 2.0,
-                        top + BUTTON / 2.0,
-                        BUTTON / 2.0,
-                        [1.0, 1.0, 1.0, 0.14 * o],
-                    );
-                }
-                let size = if i == 1 { 17.0 } else { 14.0 };
-                self.icon(g, glyph, size, button, text)?;
-                self.buttons[i] = button;
+            self.draw_controls(g, x - 6.0, bottom - BUTTON, ctx, look)?;
+        }
+        Ok(())
+    }
+
+    /// Everything on the centre line: art, title, artist, buttons, progress.
+    fn draw_centered(&mut self, g: &mut Gfx, w: f32, h: f32, ctx: &Ctx, look: &Look) -> Result<()> {
+        let p = &ctx.cfg.player;
+        let media = ctx.media;
+        let inner = (w - 2.0 * PAD).max(1.0);
+
+        let (title_text, artist_text) = if media.present {
+            (media.title.as_str(), media.artist.as_str())
+        } else {
+            (IDLE_MESSAGE, "")
+        };
+        let title = g.layout(
+            title_text,
+            &style(ctx, p.title_size, 600, Align::Center),
+            inner,
+            h,
+        )?;
+        let artist = g.layout(
+            artist_text,
+            &style(ctx, p.artist_size, 400, Align::Center),
+            inner,
+            h,
+        )?;
+        let title_h = Gfx::measure(&title).1;
+        let artist_h = if artist_text.is_empty() {
+            0.0
+        } else {
+            Gfx::measure(&artist).1
+        };
+
+        // Heights of the rows under the art; the art takes what is left.
+        let controls_h = if p.show_controls && media.present {
+            BUTTON + 8.0
+        } else {
+            0.0
+        };
+        let progress_h = if p.show_progress && media.present {
+            BAR_HEIGHT + TIME_SIZE + 14.0
+        } else {
+            0.0
+        };
+        let below = title_h + artist_h + 6.0 + controls_h + progress_h;
+        let side = if p.show_art {
+            inner.min(h - 2.0 * PAD - below - GAP).max(0.0)
+        } else {
+            0.0
+        };
+        let art_h = if side > 0.0 { side + GAP } else { 0.0 };
+
+        let mut y = ((h - art_h - below) / 2.0).max(PAD);
+        if side > 0.0 {
+            self.draw_art(g, rect((w - side) / 2.0, y, side, side), look)?;
+            y += art_h;
+        }
+        g.draw_text(&title, PAD, y, look.text, look.shadow);
+        y += title_h;
+        if artist_h > 0.0 {
+            g.draw_text(&artist, PAD, y, look.dim, look.shadow);
+            y += artist_h;
+        }
+        y += 6.0;
+        if controls_h > 0.0 {
+            let row = 3.0 * BUTTON + 2.0 * BUTTON_GAP;
+            self.draw_controls(g, (w - row) / 2.0, y, ctx, look)?;
+            y += controls_h;
+        }
+        if progress_h > 0.0 {
+            let position = self.draw_bar(g, PAD, y + 4.0, inner, ctx, look);
+            let labels = rect(PAD, y + BAR_HEIGHT + 8.0, inner, TIME_SIZE + 4.0);
+            for (text, align) in [
+                (clock_text(position), Align::Left),
+                (clock_text(media.duration_ms), Align::Right),
+            ] {
+                let layout = g.layout(
+                    &text,
+                    &style(ctx, TIME_SIZE, 400, align),
+                    inner,
+                    labels.bottom - labels.top,
+                )?;
+                g.draw_text(&layout, labels.left, labels.top, look.dim, look.shadow);
             }
         }
         Ok(())

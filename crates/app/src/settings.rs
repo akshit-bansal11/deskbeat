@@ -43,6 +43,17 @@ const SWATCHES: [&str; 10] = [
     "#FFFFFF", "#1ED760", "#7C5CFF", "#21D4FD", "#FF3DCB", "#FF6B6B", "#FFB547", "#F9F871",
     "#101014", "#000000",
 ];
+/// Fonts for one row of the clock. The first two are the Mond skin's pair,
+/// which work once their files are in the app's `fonts` folder.
+const CLOCK_FONTS: [(&str, &str); 7] = [
+    ("", "Theme font"),
+    ("Anurati", "Anurati"),
+    ("Quicksand", "Quicksand"),
+    ("Segoe UI Variable Display", "Segoe UI Variable"),
+    ("Bahnschrift", "Bahnschrift"),
+    ("Cascadia Code", "Cascadia Code"),
+    ("Georgia", "Georgia"),
+];
 const FONTS: [(&str, &str); 7] = [
     ("Segoe UI Variable Display", "Segoe UI Variable"),
     ("Segoe UI", "Segoe UI"),
@@ -680,8 +691,10 @@ impl Ui<'_> {
             frame.anchor = anchor;
             frame.set_origin(before.0, before.1, self.area.0, self.area.1);
         }
-        self.slider_u32("Width", &mut frame.w, 80, 1600, 10)?;
-        self.slider_u32("Height", &mut frame.h, 40, 1000, 10)?;
+        // Up to the size of the screen itself.
+        let (max_w, max_h) = (self.area.0.max(80) as u32, self.area.1.max(40) as u32);
+        self.slider_u32("Width", &mut frame.w, 80, max_w, 10)?;
+        self.slider_u32("Height", &mut frame.h, 40, max_h, 10)?;
         self.slider("Opacity", opacity(cfg), 0.0, 1.0, 0.05)
     }
 }
@@ -740,8 +753,11 @@ fn clock(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.choice_text("Time", &mut c.time_format, &TIME_FORMATS)?;
     ui.choice_text("Day", &mut c.day_format, &DAY_FORMATS)?;
     ui.choice_text("Date", &mut c.date_format, &DATE_FORMATS)?;
+    ui.choice_text("Day font", &mut c.day_font, &CLOCK_FONTS)?;
+    ui.choice_text("Time and date font", &mut c.time_font, &CLOCK_FONTS)?;
+    ui.slider("Day size", &mut c.day_size, 10.0, 160.0, 1.0)?;
     ui.slider("Time size", &mut c.time_size, 24.0, 240.0, 2.0)?;
-    ui.slider("Day and date size", &mut c.text_size, 10.0, 60.0, 1.0)?;
+    ui.slider("Date size", &mut c.text_size, 10.0, 60.0, 1.0)?;
     ui.slider_u32("Time weight", &mut c.time_weight, 100, 900, 100)?;
     ui.placement(Kind::Clock, cfg, |cfg| &mut cfg.clock.opacity)
 }
@@ -750,6 +766,22 @@ fn player(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.header("Player")?;
     let p = &mut cfg.player;
     ui.toggle("Show", &mut p.enabled)?;
+    let before = p.layout;
+    ui.choice(
+        "Layout",
+        &mut p.layout,
+        &[
+            (PlayerLayout::Row, "Art on the left"),
+            (PlayerLayout::Centered, "Centred stack"),
+        ],
+    )?;
+    if p.layout != before {
+        // Each layout needs a differently shaped box to look right.
+        (p.frame.w, p.frame.h) = match p.layout {
+            PlayerLayout::Row => (420, 132),
+            PlayerLayout::Centered => (260, 400),
+        };
+    }
     ui.choice(
         "Background",
         &mut p.background,
@@ -823,10 +855,13 @@ fn visualizer(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
             (AudioSource::System, "Everything"),
         ],
     )?;
-    ui.slider_u32("Bars", &mut v.bars, 4, 160, 1)?;
+    ui.toggle("Span the whole screen", &mut v.full_width)?;
+    ui.slider_u32("Bars", &mut v.bars, 4, MAX_BARS, 1)?;
     ui.slider("Gap", &mut v.gap, 0.0, 0.9, 0.02)?;
     ui.slider("Roundness", &mut v.radius, 0.0, 0.5, 0.05)?;
     ui.toggle("Bass in the middle", &mut v.symmetric)?;
+    ui.toggle("Flip left to right", &mut v.flip_x)?;
+    ui.toggle("Flip upside down", &mut v.flip_y)?;
 
     ui.header("Colour")?;
     ui.choice(

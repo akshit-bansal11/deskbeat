@@ -672,10 +672,22 @@ impl App {
         let (ax, ay, aw, ah) = window::work_area();
         let dip = |px: i32| (px as f32 / self.scale).round() as i32;
 
-        let frame = kind.frame_mut(&mut self.cfg);
-        frame.w = dip(w).max(1) as u32;
-        frame.h = dip(h).max(1) as u32;
-        frame.set_origin(dip(x - ax), dip(y - ay), dip(aw), dip(ah));
+        let spanning = kind == Kind::Visualizer && self.cfg.visualizer.full_width;
+        if spanning && dip(w) == dip(aw) && dip(x - ax) == 0 {
+            // Still edge to edge: only its height and vertical place changed.
+            let mut placed = self.cfg.visualizer.placed(dip(aw));
+            placed.h = dip(h).max(1) as u32;
+            placed.set_origin(0, dip(y - ay), dip(aw), dip(ah));
+            let frame = &mut self.cfg.visualizer.frame;
+            (frame.y, frame.h) = (placed.y, placed.h);
+        } else {
+            // Dragged off the edges: it is an ordinary box from here on.
+            self.cfg.visualizer.full_width &= kind != Kind::Visualizer;
+            let frame = kind.frame_mut(&mut self.cfg);
+            frame.w = dip(w).max(1) as u32;
+            frame.h = dip(h).max(1) as u32;
+            frame.set_origin(dip(x - ax), dip(y - ay), dip(aw), dip(ah));
+        }
         self.cfg = self.cfg.clone().sanitized();
         self.save_config();
         self.sync_windows();
@@ -956,7 +968,7 @@ impl App {
         window::set_edit_mode(self.edit);
 
         for host in &mut self.hosts {
-            let frame = host.kind.frame(&self.cfg);
+            let frame = host.kind.placed(&self.cfg, (aw as f32 / scale) as i32);
             let (left, top) = frame.origin((aw as f32 / scale) as i32, (ah as f32 / scale) as i32);
             let bounds = (
                 ax + px(left as f32),

@@ -52,18 +52,31 @@ impl Widget for Clock {
         }
         let pad = if c.card { 26.0 } else { 4.0 };
 
-        // Text, size, weight, colour, letter spacing, fraction of the row height kept.
+        // A font that is missing would be substituted by something unrelated;
+        // the theme font is the better stand-in.
+        let pick = |wanted: &'_ str| -> String {
+            if !wanted.is_empty() && g.has_font(wanted) {
+                wanted.to_owned()
+            } else {
+                theme.font.clone()
+            }
+        };
+        let (day_font, time_font) = (pick(&c.day_font), pick(&c.time_font));
+
+        // Text, font, size, weight, colour, letter spacing, fraction of the row height kept.
         let specs = [
             (
                 &self.shown[0],
-                c.text_size,
+                &day_font,
+                c.day_size,
                 600,
                 with_alpha(ctx.accent, c.opacity),
-                c.text_size * 0.22,
+                c.day_size * 0.16,
                 1.0,
             ),
             (
                 &self.shown[1],
+                &time_font,
                 c.time_size,
                 c.time_weight,
                 with_alpha(ctx.text, c.opacity),
@@ -72,6 +85,7 @@ impl Widget for Clock {
             ),
             (
                 &self.shown[2],
+                &time_font,
                 c.text_size,
                 400,
                 with_alpha(ctx.text, 0.74 * c.opacity),
@@ -82,12 +96,12 @@ impl Widget for Clock {
 
         let mut rows = Vec::with_capacity(3);
         let mut total = 0.0;
-        for (text, size, weight, color, spacing, keep) in specs {
+        for (text, font, size, weight, color, spacing, keep) in specs {
             if text.is_empty() {
                 continue;
             }
             let style = TextStyle {
-                font: &theme.font,
+                font,
                 size,
                 weight,
                 align: c.align,
