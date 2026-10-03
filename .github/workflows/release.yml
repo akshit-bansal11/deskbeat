@@ -49,9 +49,12 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item target/release/sonic-veil.exe out/sonic-veil.exe
           Copy-Item snapshots/default.png out/preview.png
-          Get-ChildItem out -File | ForEach-Object {
+          # LF endings: with CRLF, `sha256sum -c` reads the carriage return as
+          # part of the file name and reports every file missing.
+          $sums = Get-ChildItem out -File | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
-          } | Set-Content -Encoding ascii out/SHA256SUMS.txt
+          }
+          [IO.File]::WriteAllText("$PWD/out/SHA256SUMS.txt", ($sums -join "`n") + "`n")
           Get-Content out/SHA256SUMS.txt
 
       - name: Release notes from CHANGELOG.md
