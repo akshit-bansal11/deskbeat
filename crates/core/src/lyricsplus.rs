@@ -158,7 +158,7 @@ mod tests {
         // An unknown duration is not held against the lyrics. A last line
         // starting 35s after the track ends is.
         assert!(parse(BODY, 0).is_some());
-        assert!(parse(&BODY.replace("\"time\":5000", "\"time\":95000"), 60_000).is_none());
+        assert!(parse(&BODY.replace("\"time\":5", "\"time\":95"), 60_000).is_none());
     }
 
     #[test]
