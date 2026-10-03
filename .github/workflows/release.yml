@@ -1,0 +1,79 @@
+# Builds and publishes a release when a version tag is pushed (v0.1.0, ...).
+# Separate from ci.yml on purpose: a green build never implies a release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write # create the GitHub Release
+      id-token: write # sign the build attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # The release is built only from a commit that passes the full gate.
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: cargo build --release --locked
+
+      - name: The tag matches the crate version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          $crate = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
+            Where-Object name -eq 'sonic-veil' | Select-Object -ExpandProperty version
+          if ($tag -ne $crate) { throw "tag $tag does not match crate version $crate" }
+
+      # The same smoke test CI runs: every widget draws without a GPU or Spotify.
+      - name: Render snapshots
+        shell: pwsh
+        run: |
+          $run = Start-Process -FilePath target/release/sonic-veil.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
+          if ($run.ExitCode -ne 0) { throw "snapshot exited with $($run.ExitCode)" }
+
+      - name: Collect release files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item target/release/sonic-veil.exe out/sonic-veil.exe
+          Copy-Item snapshots/default.png out/preview.png
+          Get-ChildItem out -File | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          } | Set-Content -Encoding ascii out/SHA256SUMS.txt
+          Get-Content out/SHA256SUMS.txt
+
+      - name: Release notes from CHANGELOG.md
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $text = Get-Content CHANGELOG.md -Raw
+          $match = [regex]::Match($text, "(?ms)^## \[$([regex]::Escape($version))\][^\n]*\n(.*?)(?=^## \[|^\[[^\]]+\]: |\z)")
+          if (-not $match.Success) { throw "CHANGELOG.md has no section for $version" }
+          $match.Groups[1].Value.Trim() | Set-Content -Encoding utf8 notes.md
+
+      # Provenance per SLSA v1.1. Attestations need a public repository on the
+      # free plan, so this runs once the repo is public. Verify with:
+      #   gh attestation verify sonic-veil.exe --repo akshit-bansal11/sonic-veil
+      - uses: actions/attest-build-provenance@v4.2.2
+        if: ${{ !github.event.repository.private }}
+        with:
+          subject-path: out/sonic-veil.exe
+
+      - uses: softprops/action-gh-release@v3.0.3
+        with:
+          body_path: notes.md
+          files: out/*
+          fail_on_unmatched_files: true
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
