@@ -7,7 +7,7 @@
 
 use std::ffi::c_void;
 
-use sonic_veil_core::color::{Rgba, parse_hex, with_alpha};
+use sonic_veil_core::color::{Rgba, hsv_to_rgb, parse_hex, rgb_to_hsv, to_hex, with_alpha};
 use sonic_veil_core::config::*;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
@@ -29,6 +29,19 @@ const TABS_HEIGHT: f32 = 52.0;
 const FOOTER_HEIGHT: f32 = 64.0;
 const ROW: f32 = 38.0;
 const COLOR_ROW: f32 = 62.0;
+/// The picker's saturation and brightness square, and the hue bar under it.
+const PICKER_SQUARE: (f32, f32) = (210.0, 120.0);
+const HUE_BAR_HEIGHT: f32 = 16.0;
+/// The six primaries a hue bar passes through, in order.
+const HUE_STOPS: [Rgba; 7] = [
+    [1.0, 0.0, 0.0, 1.0],
+    [1.0, 1.0, 0.0, 1.0],
+    [0.0, 1.0, 0.0, 1.0],
+    [0.0, 1.0, 1.0, 1.0],
+    [0.0, 0.0, 1.0, 1.0],
+    [1.0, 0.0, 1.0, 1.0],
+    [1.0, 0.0, 0.0, 1.0],
+];
 /// Share of a row's width given to the control rather than the label.
 const CONTROL_SHARE: f32 = 0.56;
 const WHEEL_STEP: f32 = 56.0;
@@ -131,9 +144,52 @@ pub struct Outcome {
 
 /// The panel's contents and pointer state, apart from any window, so the
 /// same code paints the real panel and the offscreen snapshot of it.
+/// The colour picker, which belongs to at most one colour row at a time.
+#[derive(Default)]
+struct Picker {
+    /// The row it is open under.
+    open: Option<u32>,
+    /// Hue in degrees, saturation, value. Kept here rather than read back
+    /// from the colour: grey and black have no hue, so reading it back would
+    /// lose the hue mid-drag.
+    hsv: (f32, f32, f32),
+    /// The hex field has the keyboard.
+    typing: bool,
+    /// The hex digits in the field, without the `#`.
+    typed: String,
+}
+
+impl Picker {
+    fn show(&mut self, color: Rgba) {
+        self.hsv = rgb_to_hsv(color[0], color[1], color[2]);
+        self.typed = to_hex(color)[1..].to_owned();
+    }
+
+    /// A typed character: hex digits fill the field, Backspace empties it
+    /// one at a time, Enter and Escape give the keyboard back.
+    fn key(&mut self, code: u32) {
+        if !self.typing {
+            return;
+        }
+        match char::from_u32(code) {
+            Some('\u{8}') => {
+                self.typed.pop();
+            }
+            Some('\r' | '\u{1b}') => self.typing = false,
+            Some(digit) if digit.is_ascii_hexdigit() && self.typed.len() < 6 => {
+                self.typed.push(digit.to_ascii_uppercase());
+            }
+            _ => {}
+        }
+    }
+}
+
 pub struct View {
+    picker: Picker,
     tab: usize,
     scroll: f32,
+    /// How far the current tab can scroll, as of the last paint.
+    max_scroll: f32,
     mouse: (f32, f32),
     down: bool,
     /// The button went down, or came up, since the last paint.
@@ -148,17 +204,28 @@ impl Default for View {
         Self {
             tab: 0,
             scroll: 0.0,
+            max_scroll: 0.0,
             // Off the panel, so nothing starts out hovered.
             mouse: (-1.0, -1.0),
             down: false,
             pressed: false,
             released: false,
             active: None,
+            picker: Picker::default(),
         }
     }
 }
 
 impl View {
+    /// A view on the General tab with the picker open under its first
+    /// colour row, for the snapshot: nothing else can click it open there.
+    pub fn with_picker_open() -> Self {
+        let mut view = Self::default();
+        view.picker.open = Some(0);
+        view.picker.show([0.486, 0.361, 1.0, 1.0]);
+        view
+    }
+
     /// A view opened on one tab, with the pointer off the panel.
     pub fn on_tab(tab: usize) -> Self {
         Self {
@@ -202,6 +269,7 @@ impl View {
             down: self.down,
             released: self.released,
             active: &mut self.active,
+            picker: &mut self.picker,
             next_id: 0,
             changed: false,
             view,
@@ -234,6 +302,7 @@ impl View {
             if ui.clicked(cell) && !selected {
                 self.tab = i;
                 self.scroll = 0.0;
+                ui.picker.open = None;
                 outcome.redraw = true;
             }
             let color = if selected { TEXT } else { DIM };
@@ -269,6 +338,7 @@ impl View {
         outcome.changed = ui.changed;
 
         let max_scroll = (content_height - (view.1 - view.0)).max(0.0);
+        self.max_scroll = max_scroll;
         let clamped = self.scroll.clamp(0.0, max_scroll);
         outcome.redraw |= outcome.changed || clamped != self.scroll;
         self.scroll = clamped;
@@ -369,9 +439,21 @@ impl Panel {
         self.dirty = true;
     }
 
-    pub fn wheel(&mut self, delta: i32) {
-        self.view.scroll -= delta as f32 / 120.0 * WHEEL_STEP;
+    /// A typed character, for the colour picker's hex field.
+    pub fn key(&mut self, code: u32) {
+        self.view.picker.key(code);
         self.dirty = true;
+    }
+
+    pub fn wheel(&mut self, delta: i32) {
+        // Clamped here, before anything is drawn. Clamping after a paint drew
+        // one frame scrolled past the end and the next one snapped back.
+        let view = &mut self.view;
+        let wanted = (view.scroll - delta as f32 / 120.0 * WHEEL_STEP).clamp(0.0, view.max_scroll);
+        if wanted != view.scroll {
+            view.scroll = wanted;
+            self.dirty = true;
+        }
     }
 
     /// Draws the panel into its window.
@@ -418,6 +500,7 @@ struct Ui<'a> {
     down: bool,
     released: bool,
     active: &'a mut Option<u32>,
+    picker: &'a mut Picker,
     next_id: u32,
     changed: bool,
     /// The vertical band in which controls are visible and take input.
@@ -680,8 +763,12 @@ impl Ui<'_> {
         Ok(())
     }
 
-    /// A row of swatches, preceded by named options such as "Auto".
+    /// A colour: named options such as "Accent", a row of swatches, and a
+    /// last chip that opens a picker for any colour at all.
     fn color(&mut self, label: &str, value: &mut String, named: &[(&str, &str)]) -> Result<()> {
+        // One id for the row, one each for the picker's square and hue bar.
+        let id = self.next_id;
+        self.next_id += 3;
         let (row, _) = self.row(label, COLOR_ROW)?;
         let mut x = row.left;
         let top = row.top + ROW - 4.0;
@@ -695,23 +782,194 @@ impl Ui<'_> {
             }
             x += 64.0;
         }
+        let mut preset = false;
         for swatch in SWATCHES {
             let chip = rect(x, top, 22.0, 22.0);
             let selected = value.eq_ignore_ascii_case(swatch);
+            preset |= selected;
             if self.clicked(chip) && !selected {
                 *value = swatch.to_owned();
                 self.changed = true;
             }
             if selected {
-                self.g
-                    .stroke_round(rect(x - 2.5, top - 2.5, 27.0, 27.0), 8.0, self.accent, 2.0);
+                self.ring(chip);
             }
             self.g
                 .fill_round(chip, 6.0, parse_hex(swatch).unwrap_or([1.0; 4]));
             self.g.stroke_round(chip, 6.0, [1.0, 1.0, 1.0, 0.25], 1.0);
-            x += 28.0;
+            x += 26.0;
+        }
+
+        // The last chip is any other colour. It shows the current one when
+        // that is not a swatch, and a spectrum otherwise.
+        let chip = rect(x, top, 22.0, 22.0);
+        let custom = parse_hex(value).filter(|_| !preset);
+        let open = self.picker.open == Some(id);
+        if self.clicked(chip) {
+            self.picker.open = (!open).then_some(id);
+            self.picker.typing = false;
+            self.picker
+                .show(parse_hex(value).unwrap_or([1.0, 1.0, 1.0, 1.0]));
+        }
+        match custom {
+            Some(color) => self.g.fill_round(chip, 6.0, color),
+            None => {
+                let spectrum =
+                    self.g
+                        .gradient(chip.left, chip.right, HUE_STOPS[5], HUE_STOPS[3])?;
+                self.g.fill_round_with(chip, 6.0, &spectrum);
+            }
+        }
+        self.g.stroke_round(chip, 6.0, [1.0, 1.0, 1.0, 0.25], 1.0);
+        if custom.is_some() || open {
+            self.ring(chip);
+        }
+        if self.picker.open == Some(id) {
+            self.picker_body(id, value)?;
         }
         Ok(())
+    }
+
+    /// The accent outline around a selected swatch.
+    fn ring(&mut self, chip: D2D_RECT_F) {
+        let around = rect(chip.left - 2.5, chip.top - 2.5, 27.0, 27.0);
+        self.g.stroke_round(around, 8.0, self.accent, 2.0);
+    }
+
+    /// The open picker: a square for saturation and brightness, a bar for
+    /// hue, and a hex field that takes typing.
+    fn picker_body(&mut self, id: u32, value: &mut String) -> Result<()> {
+        let (width, height) = PICKER_SQUARE;
+        let top = self.y + 2.0;
+        let square = rect(self.left, top, width, height);
+        let bar = rect(self.left, top + height + 10.0, width, HUE_BAR_HEIGHT);
+        let field = rect(
+            self.left + width + 18.0,
+            top,
+            self.width - width - 18.0,
+            34.0,
+        );
+        self.y = bar.bottom + 14.0;
+
+        // Dragging in the square or along the bar.
+        let (mx, my) = self.mouse;
+        if self.pressed && self.active.is_none() {
+            if self.hot(square) {
+                *self.active = Some(id + 1);
+            } else if self.hot(rect(bar.left, bar.top - 4.0, width, HUE_BAR_HEIGHT + 8.0)) {
+                *self.active = Some(id + 2);
+            }
+            self.picker.typing = self.hot(field);
+        }
+        let across = ((mx - square.left) / width).clamp(0.0, 1.0);
+        let dragging = *self.active == Some(id + 1) || *self.active == Some(id + 2);
+        if dragging {
+            if self.down || self.released {
+                let (hue, saturation, brightness) = &mut self.picker.hsv;
+                if *self.active == Some(id + 1) {
+                    *saturation = across;
+                    *brightness = 1.0 - ((my - square.top) / height).clamp(0.0, 1.0);
+                } else {
+                    *hue = across * 359.9;
+                }
+                let (hue, saturation, brightness) = self.picker.hsv;
+                let (r, g, b) = hsv_to_rgb(hue, saturation, brightness);
+                let hex = to_hex([r, g, b, 1.0]);
+                self.picker.typed = hex[1..].to_owned();
+                if hex != *value {
+                    *value = hex;
+                    self.changed = true;
+                }
+            }
+            if !self.down {
+                *self.active = None;
+            }
+        } else if self.picker.typing {
+            // Six digits make a colour; fewer are still being typed.
+            if self.picker.typed.len() == 6
+                && let Some(color) = parse_hex(&self.picker.typed)
+                && !to_hex(color).eq_ignore_ascii_case(value)
+            {
+                *value = to_hex(color);
+                self.picker.hsv = rgb_to_hsv(color[0], color[1], color[2]);
+                self.changed = true;
+            }
+        } else if let Some(color) = parse_hex(value)
+            && !self.picker.typed.eq_ignore_ascii_case(&to_hex(color)[1..])
+        {
+            // The colour was changed some other way, by a swatch say.
+            self.picker.show(color);
+        }
+
+        // The square: white to the pure hue across, darkening to black downward.
+        let (hue, saturation, brightness) = self.picker.hsv;
+        let (r, g, b) = hsv_to_rgb(hue, 1.0, 1.0);
+        let across_brush = self
+            .g
+            .gradient(square.left, square.right, [1.0; 4], [r, g, b, 1.0])?;
+        self.g.fill_round_with(square, 8.0, &across_brush);
+        let down_brush = self.g.vertical_gradient(
+            square.top,
+            square.bottom,
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        )?;
+        self.g.fill_round_with(square, 8.0, &down_brush);
+        let (knob_x, knob_y) = (
+            square.left + saturation * width,
+            square.top + (1.0 - brightness) * height,
+        );
+        self.g.fill_circle(knob_x, knob_y, 7.0, [1.0; 4]);
+        let (r, g, b) = hsv_to_rgb(hue, saturation, brightness);
+        self.g.fill_circle(knob_x, knob_y, 5.0, [r, g, b, 1.0]);
+
+        // The hue bar, one gradient between each pair of primaries.
+        let step = width / 6.0;
+        for (i, pair) in HUE_STOPS.windows(2).enumerate() {
+            let left = bar.left + step * i as f32;
+            // A hair of overlap hides the seam between segments.
+            let segment = rect(left, bar.top, step + 0.5, HUE_BAR_HEIGHT);
+            let brush = self.g.gradient(left, left + step, pair[0], pair[1])?;
+            self.g.fill_round_with(segment, 0.0, &brush);
+        }
+        let hue_x = bar.left + hue / 360.0 * width;
+        self.g.fill_round(
+            rect(hue_x - 3.0, bar.top - 3.0, 6.0, HUE_BAR_HEIGHT + 6.0),
+            3.0,
+            [1.0; 4],
+        );
+
+        // The hex field, with the colour itself beneath it.
+        self.g.fill_round(field, 8.0, TRACK);
+        if self.picker.typing {
+            self.g.stroke_round(field, 8.0, self.accent, 1.5);
+        }
+        let caret = if self.picker.typing { "_" } else { "" };
+        let shown = format!("#{}{caret}", self.picker.typed);
+        self.text(&shown, field, 14.0, 600, Align::Center, TEXT)?;
+        let preview = rect(
+            field.left,
+            field.bottom + 8.0,
+            field.right - field.left,
+            46.0,
+        );
+        self.g.fill_round(preview, 8.0, [r, g, b, 1.0]);
+        self.g
+            .stroke_round(preview, 8.0, [1.0, 1.0, 1.0, 0.25], 1.0);
+        let hint = rect(
+            field.left,
+            preview.bottom + 6.0,
+            field.right - field.left,
+            34.0,
+        );
+        self.text(
+            "Click the code to type one",
+            hint,
+            11.5,
+            400,
+            Align::Center,
+            DIM,
+        )
     }
 
     /// Picks a font: the theme's, one from the app's own folder, or one
@@ -1031,4 +1289,46 @@ fn visualizer(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.slider("Lowest pitch (Hz)", &mut v.min_hz, 20.0, 500.0, 10.0)?;
     ui.slider("Highest pitch (Hz)", &mut v.max_hz, 4000.0, 20_000.0, 500.0)?;
     ui.placement(Kind::Visualizer, cfg, |cfg| &mut cfg.visualizer.opacity)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn typing(start: &str) -> Picker {
+        Picker {
+            typing: true,
+            typed: start.to_owned(),
+            ..Picker::default()
+        }
+    }
+
+    #[test]
+    fn the_hex_field_takes_six_hex_digits_and_nothing_else() {
+        let mut picker = typing("");
+        for ch in "#1d b9zz54ff".chars() {
+            picker.key(ch as u32);
+        }
+        assert_eq!(picker.typed, "1DB954");
+    }
+
+    #[test]
+    fn backspace_removes_a_digit_and_enter_gives_the_keyboard_back() {
+        let mut picker = typing("1DB954");
+        picker.key(8);
+        assert_eq!(picker.typed, "1DB95");
+        picker.key(13);
+        assert!(!picker.typing);
+        // No longer typing: keys are ignored.
+        picker.key('A' as u32);
+        assert_eq!(picker.typed, "1DB95");
+    }
+
+    #[test]
+    fn showing_a_colour_fills_the_field_and_keeps_its_hue() {
+        let mut picker = Picker::default();
+        picker.show([1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(picker.typed, "FF0000");
+        assert_eq!(picker.hsv, (0.0, 1.0, 1.0));
+    }
 }

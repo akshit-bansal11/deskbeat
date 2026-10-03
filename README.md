@@ -40,7 +40,7 @@ Hotkeys can be turned off in settings.
 
 The settings panel covers the common choices: four one-click looks, fonts, colours, sizes, which widgets show, where they sit, and how the visualizer moves.
 
-The clock and the player have no box. In edit layout the day, time and date, and the player's art, title, artist, each button, the progress bar and both times can each be dragged anywhere; the one under the pointer is outlined. Nothing else is drawn in edit layout: no frames and no labels. Dragging the space between a widget's elements moves them all together. The Player tab has two ready-made arrangements to start from.
+The clock and the player have no box. In edit layout the day, time and date, and the player's art, title, artist, each button, the progress bar and both times can each be dragged anywhere; the one under the pointer is outlined. Nothing else is drawn in edit layout: no frames and no labels. Shift+click selects several elements, which then drag together. Dragging the space between a widget's elements moves all of that widget. The Player tab has two ready-made arrangements to start from.
 
 Every piece of text has its own font, size, weight, colour, opacity, letter spacing and capitals setting. The progress bar has a length, thickness and colour, the buttons a size and colour, and the album art a size and corner rounding.
 
@@ -52,7 +52,9 @@ Everything is stored in one file, which you can also edit by hand. It reloads wh
 
 To use a font without installing it in Windows, put its `.ttf` or `.otf` file in `%APPDATA%\sonic-veil\fonts` and restart the app. The clock's day and time default to Anurati and Quicksand, the pairing the Mond Rainmeter skin uses; they are not shipped with the app, and the theme font is used until they are in that folder.
 
-The file takes a few things the panel does not: any hex colour, any installed font, and a hand-written clock format (`%H:%M`, `%l:%M %p`, `%A, %e %B` and so on).
+Every colour setting has a picker: the last chip in its row opens a colour square, a hue bar and a hex field you can type into.
+
+The file takes a few things the panel does not: any installed font, and a hand-written clock format (`%H:%M`, `%l:%M %p`, `%A, %e %B` and so on).
 
 Widgets can sit on the desktop under your windows (the default), behave like a normal window, or stay on top of everything.
 

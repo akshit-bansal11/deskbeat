@@ -295,7 +295,11 @@ fn settings_sheet(gfx: &mut Gfx, media: &MediaState) -> Result<()> {
     let mut cfg = Config::default();
     let accent = Palette::new(&cfg).accent(media);
     for tab in 0..settings::TABS.len() {
-        let mut view = settings::View::on_tab(tab);
+        let mut view = if tab == 0 {
+            settings::View::with_picker_open()
+        } else {
+            settings::View::on_tab(tab)
+        };
         gfx.set_transform(1.0, settings::WIDTH * tab as f32, 0.0);
         view.paint(
             gfx,

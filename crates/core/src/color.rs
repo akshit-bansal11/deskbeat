@@ -43,7 +43,8 @@ pub fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
     std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
 }
 
-fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+/// Hue in degrees, saturation and value in `0.0..=1.0`.
+pub fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     let max = r.max(g).max(b);
     let delta = max - r.min(g).min(b);
     let hue = if delta == 0.0 {
@@ -59,7 +60,7 @@ fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     (hue, saturation, max)
 }
 
-fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
+pub fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
     let channel = |n: f32| {
         let k = (n + h / 60.0).rem_euclid(6.0);
         v - v * s * k.min(4.0 - k).clamp(0.0, 1.0)

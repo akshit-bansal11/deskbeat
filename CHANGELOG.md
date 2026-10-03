@@ -8,6 +8,10 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A colour picker on every colour setting: a saturation and brightness
+  square, a hue bar, and a hex field that takes typing.
+- Shift+click in edit layout selects several elements, which then move
+  together.
 - Every text of the clock and the player has its own font, size, weight,
   colour, opacity, letter spacing and capitals setting. The lyrics take
   their own font.
@@ -46,6 +50,10 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
   load and keep their values.
 - `clock.align` from the config. A file that still has it loads, and the
   key is ignored.
+
+### Fixed
+
+- The settings panel flickered when scrolled past its top or bottom.
 
 ### Changed
 

@@ -29,7 +29,8 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey, VK_DOWN, VK_UP,
+    GetKeyState, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey, VK_DOWN,
+    VK_SHIFT, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{HSTRING, Result, w};
@@ -178,11 +179,12 @@ struct App {
     desktop_recheck_at: Option<f64>,
     device_lost: bool,
     quit: bool,
-    /// The element being dragged in edit mode: its widget, its id, and where
-    /// the pointer last was.
+    /// Where the pointer last was while the selection is being dragged.
     /// Positions are on the screen, not in the window: the window itself
     /// moves as it re-wraps around the element being dragged.
-    drag: Option<(usize, u8, f32, f32)>,
+    drag: Option<(f32, f32)>,
+    /// The elements chosen in edit mode, which move together.
+    selected: Vec<(Kind, u8)>,
     /// The element under the pointer in edit mode, which is outlined.
     hot: Option<(Kind, u8)>,
     /// Whether Windows starts the app at sign-in, as last read from the registry.
@@ -296,6 +298,7 @@ pub fn run() -> Result<()> {
         device_lost: false,
         quit: false,
         drag: None,
+        selected: Vec::new(),
         hot: None,
         autostart: autostart_enabled(),
     };
@@ -439,11 +442,16 @@ impl App {
             }
             if host.dirty {
                 host.dirty = false;
-                let lit = self
-                    .hot
+                // Outlined in edit mode: what is selected, and what the
+                // pointer is over.
+                let lit: Vec<u8> = self
+                    .selected
+                    .iter()
+                    .chain(&self.hot)
                     .filter(|(kind, _)| self.edit && *kind == host.kind)
-                    .map(|(_, id)| id);
-                if let Err(error) = draw_host(&mut self.gfx, host, &ctx, self.scale, lit) {
+                    .map(|(_, id)| *id)
+                    .collect();
+                if let Err(error) = draw_host(&mut self.gfx, host, &ctx, self.scale, &lit) {
                     log(&format!("drawing {} failed: {error}", host.kind.label()));
                     self.device_lost = true;
                 }
@@ -654,6 +662,11 @@ impl App {
             Event::Foreground(hwnd) => self.foreground_changed(hwnd),
             Event::Moved(hwnd) => self.widget_moved(hwnd),
             Event::Mouse { hwnd, kind, x, y } => self.mouse(hwnd, kind, x, y),
+            Event::Char { hwnd, code } => {
+                if let Some(panel) = self.settings.as_mut().filter(|panel| panel.hwnd == hwnd) {
+                    panel.key(code);
+                }
+            }
             Event::Wheel { hwnd, delta } => {
                 if let Some(panel) = self.settings.as_mut().filter(|panel| panel.hwnd == hwnd) {
                     panel.wheel(delta);
@@ -768,37 +781,44 @@ impl App {
         let ((x, y), (sx, sy)) = (at, screen);
         match kind {
             Mouse::Down => {
-                // The last one drawn is on top, so it wins where two overlap.
-                let grabbed = self.hosts[index]
-                    .widget
-                    .parts()
-                    .iter()
-                    .rev()
-                    .find(|(_, r)| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
-                    .map(|(id, _)| *id);
-                self.drag = grabbed.map(|id| (index, id, sx, sy));
-                self.set_hot(index, grabbed);
+                let Some(id) = self.part_under(index, x, y) else {
+                    return;
+                };
+                let part = (self.hosts[index].kind, id);
+                let shift = unsafe { GetKeyState(i32::from(VK_SHIFT.0)) } < 0;
+                if shift {
+                    // Shift adds an element to the selection, or takes out
+                    // one that is already in it.
+                    match self.selected.iter().position(|chosen| *chosen == part) {
+                        Some(at) => {
+                            self.selected.remove(at);
+                        }
+                        None => self.selected.push(part),
+                    }
+                } else if !self.selected.contains(&part) {
+                    // A plain click on something outside the selection
+                    // starts a new one. On something inside it, the whole
+                    // selection is about to be dragged.
+                    self.selected = vec![part];
+                }
+                self.drag = self.selected.contains(&part).then_some((sx, sy));
+                self.redraw_all();
             }
             Mouse::Move => {
-                let Some((host, id, last_x, last_y)) = self.drag else {
+                let Some((last_x, last_y)) = self.drag else {
                     // Not dragging: outline whatever the pointer is over.
-                    let over = self.hosts[index]
-                        .widget
-                        .parts()
-                        .iter()
-                        .rev()
-                        .find(|(_, r)| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
-                        .map(|(id, _)| *id);
+                    let over = self.part_under(index, x, y);
                     self.set_hot(index, over);
                     return;
                 };
-                if host != index {
-                    return;
+                // Everything selected moves together, across widgets too.
+                for &(kind, id) in &self.selected {
+                    kind.nudge(&mut self.cfg, id, sx - last_x, sy - last_y);
                 }
-                let kind = self.hosts[index].kind;
-                kind.nudge(&mut self.cfg, id, sx - last_x, sy - last_y);
-                self.drag = Some((host, id, sx, sy));
-                self.hosts[index].dirty = true;
+                self.drag = Some((sx, sy));
+                for host in &mut self.hosts {
+                    host.dirty |= self.selected.iter().any(|(kind, _)| *kind == host.kind);
+                }
             }
             Mouse::Up => {
                 if self.drag.take().is_some() {
@@ -815,6 +835,18 @@ impl App {
                 }
             }
         }
+    }
+
+    /// The element of a widget at a point inside it. The last one drawn is
+    /// on top, so it wins where two overlap.
+    fn part_under(&self, index: usize, x: f32, y: f32) -> Option<u8> {
+        self.hosts[index]
+            .widget
+            .parts()
+            .iter()
+            .rev()
+            .find(|(_, r)| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+            .map(|(id, _)| *id)
     }
 
     /// Records which element of a widget the pointer is over, redrawing the
@@ -919,6 +951,7 @@ impl App {
         self.edit = !self.edit;
         self.raised = false;
         self.drag = None;
+        self.selected.clear();
         self.hot = None;
         if !self.edit {
             for host in &self.hosts {
@@ -1131,17 +1164,18 @@ impl App {
     }
 }
 
-/// Draws one widget into its window. `lit` is the element under the pointer
-/// in edit mode, which gets the only outline there is: nothing else marks a
-/// widget's bounds.
-fn draw_host(gfx: &mut Gfx, host: &mut Host, ctx: &Ctx, scale: f32, lit: Option<u8>) -> Result<()> {
+/// Draws one widget into its window. `lit` are the elements to outline in
+/// edit mode: the selected ones and the one under the pointer. Nothing else
+/// marks a widget's bounds.
+fn draw_host(gfx: &mut Gfx, host: &mut Host, ctx: &Ctx, scale: f32, lit: &[u8]) -> Result<()> {
     let (w, h) = (host.size.0 as f32 / scale, host.size.1 as f32 / scale);
     gfx.begin(&host.surface);
     gfx.set_transform(scale, 0.0, 0.0);
     let drawn = host.widget.draw(gfx, w, h, ctx);
-    let outline = host.widget.parts().iter().find(|(id, _)| Some(*id) == lit);
-    if let Some((_, r)) = outline {
-        gfx.stroke_round(*r, 3.0, ctx.accent, 1.5);
+    for (id, r) in host.widget.parts() {
+        if lit.contains(id) {
+            gfx.stroke_round(*r, 3.0, ctx.accent, 1.5);
+        }
     }
     gfx.end(&host.surface).and(drawn)
 }

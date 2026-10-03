@@ -73,6 +73,11 @@ pub enum Event {
         hwnd: HWND,
         delta: i32,
     },
+    /// A typed character, as a UTF-16 code unit.
+    Char {
+        hwnd: HWND,
+        code: u32,
+    },
     /// The user finished dragging or resizing a window.
     Moved(HWND),
     Close(HWND),
@@ -189,6 +194,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_DISPLAYCHANGE | WM_DPICHANGED => push(Event::Display),
         WM_SETTINGCHANGE if wp.0 == SPI_SETWORKAREA.0 as usize => push(Event::Display),
         WM_EXITSIZEMOVE => push(Event::Moved(hwnd)),
+        WM_CHAR => push(Event::Char {
+            hwnd,
+            code: wp.0 as u32,
+        }),
         WM_MOUSEWHEEL => push(Event::Wheel {
             hwnd,
             delta: (wp.0 >> 16) as i16 as i32,
