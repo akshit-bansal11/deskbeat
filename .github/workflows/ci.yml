@@ -41,17 +41,17 @@ jobs:
       - name: Render snapshots
         shell: pwsh
         run: |
-          $run = Start-Process -FilePath target/release/sonic-veil.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
+          $run = Start-Process -FilePath target/release/deskbeat.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
           if ($run.ExitCode -ne 0) {
-            Get-Content "$env:LOCALAPPDATA/sonic-veil/sonic-veil.log" -ErrorAction SilentlyContinue
+            Get-Content "$env:LOCALAPPDATA/deskbeat/deskbeat.log" -ErrorAction SilentlyContinue
             throw "snapshot exited with $($run.ExitCode)"
           }
           Get-ChildItem snapshots
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: sonic-veil-windows-x64
+          name: deskbeat-windows-x64
           retention-days: 14
           if-no-files-found: error
           path: |
-            target/release/sonic-veil.exe
+            target/release/deskbeat.exe
             snapshots/*.png

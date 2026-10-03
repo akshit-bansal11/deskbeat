@@ -33,21 +33,21 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}".TrimStart('v')
           $crate = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
-            Where-Object name -eq 'sonic-veil' | Select-Object -ExpandProperty version
+            Where-Object name -eq 'deskbeat' | Select-Object -ExpandProperty version
           if ($tag -ne $crate) { throw "tag $tag does not match crate version $crate" }
 
       # The same smoke test CI runs: every widget draws without a GPU or Spotify.
       - name: Render snapshots
         shell: pwsh
         run: |
-          $run = Start-Process -FilePath target/release/sonic-veil.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
+          $run = Start-Process -FilePath target/release/deskbeat.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
           if ($run.ExitCode -ne 0) { throw "snapshot exited with $($run.ExitCode)" }
 
       - name: Collect release files
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item target/release/sonic-veil.exe out/sonic-veil.exe
+          Copy-Item target/release/deskbeat.exe out/deskbeat.exe
           Copy-Item snapshots/default.png out/preview.png
           # LF endings: with CRLF, `sha256sum -c` reads the carriage return as
           # part of the file name and reports every file missing.
@@ -68,11 +68,11 @@ jobs:
 
       # Provenance per SLSA v1.1. Attestations need a public repository on the
       # free plan, so this runs once the repo is public. Verify with:
-      #   gh attestation verify sonic-veil.exe --repo akshit-bansal11/sonic-veil
+      #   gh attestation verify deskbeat.exe --repo akshit-bansal11/deskbeat
       - uses: actions/attest-build-provenance@v4.2.2
         if: ${{ !github.event.repository.private }}
         with:
-          subject-path: out/sonic-veil.exe
+          subject-path: out/deskbeat.exe
 
       - uses: softprops/action-gh-release@v3.0.3
         with:

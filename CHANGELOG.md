@@ -6,6 +6,15 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-03
+
+### Changed
+
+- **Renamed from Sonic Veil to Deskbeat.** The exe is `deskbeat.exe` and its
+  folders are `%APPDATA%\deskbeat` and `%LOCALAPPDATA%\deskbeat`. Settings,
+  fonts, the lyrics cache and the start-with-Windows entry are carried over
+  the first time the new exe runs.
+
 ### Added
 
 - Lyrics timed word by word, from a LyricsPlus server, with LRCLIB as the
@@ -43,7 +52,7 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
   other lines; an outline with its own colour and width; a shadow with its
   own colour and strength.
 - Separate fonts for the clock's day row and its time and date rows.
-- Fonts placed in `%APPDATA%\sonic-veil\fonts` can be used without
+- Fonts placed in `%APPDATA%\deskbeat\fonts` can be used without
   installing them in Windows.
 
 ### Removed
@@ -104,5 +113,6 @@ First build. A pre-release: see "Not yet verified" below before relying on it.
 - Staying visible through Show Desktop (Win+D) is untested.
 - The exe is unsigned, so Windows SmartScreen warns on first launch.
 
-[Unreleased]: https://github.com/akshit-bansal11/sonic-veil/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/akshit-bansal11/sonic-veil/releases/tag/v0.1.0
+[Unreleased]: https://github.com/akshit-bansal11/deskbeat/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/akshit-bansal11/deskbeat/compare/v0.1.0...v1.0.0
+[0.1.0]: https://github.com/akshit-bansal11/deskbeat/releases/tag/v0.1.0

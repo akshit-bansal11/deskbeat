@@ -1,4 +1,4 @@
-//! Everything in Sonic Veil that does not touch Windows: pure functions over
+//! Everything in Deskbeat that does not touch Windows: pure functions over
 //! text, time and numbers, so all of it runs under `cargo test`.
 
 pub mod bands;

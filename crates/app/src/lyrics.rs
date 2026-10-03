@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use sonic_veil_core::lrc::{parse_lrc, parse_plain};
-use sonic_veil_core::lrclib::{self, Query, Record};
-use sonic_veil_core::lyricsplus;
-use sonic_veil_core::timing::{Line, normalize_lines};
+use deskbeat_core::lrc::{parse_lrc, parse_plain};
+use deskbeat_core::lrclib::{self, Query, Record};
+use deskbeat_core::lyricsplus;
+use deskbeat_core::timing::{Line, normalize_lines};
 use windows::Foundation::Uri;
 use windows::Web::Http::HttpClient;
 use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
@@ -19,9 +19,9 @@ use crate::window::WM_APP_LYRICS;
 use crate::{Notify, data_dir, log};
 
 const USER_AGENT: &str = concat!(
-    "SonicVeil/",
+    "Deskbeat/",
     env!("CARGO_PKG_VERSION"),
-    " (https://github.com/akshit-bansal11/sonic-veil)"
+    " (https://github.com/akshit-bansal11/deskbeat)"
 );
 /// A "no lyrics" answer is asked again after this long: LRCLIB gains tracks.
 const MISS_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);

@@ -30,8 +30,8 @@ pub const WM_APP_SHOW_SETTINGS: u32 = WM_APP + 5;
 /// The `windows` crate keeps this one under the Controls feature.
 const WM_MOUSELEAVE: u32 = 0x02A3;
 
-pub const CLASS: PCWSTR = w!("SonicVeil");
-pub const MAIN_TITLE: PCWSTR = w!("Sonic Veil");
+pub const CLASS: PCWSTR = w!("Deskbeat");
+pub const MAIN_TITLE: PCWSTR = w!("Deskbeat");
 
 /// What a window is for, stored in its user data.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -343,7 +343,7 @@ pub fn create_widget(bounds: (i32, i32, i32, i32)) -> Result<HWND> {
         Role::Widget,
         WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
         WS_POPUP,
-        w!("Sonic Veil widget"),
+        w!("Deskbeat widget"),
         bounds,
     )?;
     // A layered window is invisible until its attributes are set once.

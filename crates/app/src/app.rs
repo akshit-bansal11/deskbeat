@@ -10,10 +10,10 @@ use std::process::Command;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
-use sonic_veil_core::color::{Rgba, parse_hex};
-use sonic_veil_core::config::{Config, Layer};
-use sonic_veil_core::lrclib::Query;
-use sonic_veil_core::timefmt::LocalTime;
+use deskbeat_core::color::{Rgba, parse_hex};
+use deskbeat_core::config::{Config, Layer};
+use deskbeat_core::lrclib::Query;
+use deskbeat_core::timefmt::LocalTime;
 use windows::Win32::Foundation::{
     ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, RECT, WAIT_OBJECT_0,
 };
@@ -74,7 +74,9 @@ const DESKTOP_RECHECK_MS: f64 = 250.0;
 const FIT_PAD: f32 = 14.0;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-const RUN_VALUE: &str = "SonicVeil";
+const RUN_VALUE: &str = "Deskbeat";
+/// The start-with-Windows entry under the app's previous name.
+const OLD_RUN_VALUE: &str = "SonicVeil";
 
 /// Colours parsed from the config once, not on every frame.
 pub struct Palette {
@@ -239,7 +241,7 @@ fn set_autostart(on: bool) {
 pub fn run() -> Result<()> {
     unsafe {
         // A second launch must not exit silently: it asks the first to show itself.
-        let _instance = CreateMutexW(None, false, w!("Local\\SonicVeil.Instance"))?;
+        let _instance = CreateMutexW(None, false, w!("Local\\Deskbeat.Instance"))?;
         if GetLastError() == ERROR_ALREADY_EXISTS {
             if let Ok(existing) = FindWindowW(window::CLASS, window::MAIN_TITLE) {
                 window::post(existing, window::WM_APP_SHOW_SETTINGS);
@@ -247,6 +249,12 @@ pub fn run() -> Result<()> {
             return Ok(());
         }
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
+
+    // The old entry starts an exe that is no longer the app.
+    if reg(&["query", RUN_KEY, "/v", OLD_RUN_VALUE]) {
+        reg(&["delete", RUN_KEY, "/v", OLD_RUN_VALUE, "/f"]);
+        set_autostart(true);
     }
 
     window::register()?;

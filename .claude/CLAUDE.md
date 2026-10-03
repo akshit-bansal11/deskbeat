@@ -1,6 +1,6 @@
 This project inherits every rule in ~/.claude/CLAUDE.md. Rules below add to or override it. Nothing here restates it.
 
-- Reference ID: `yfu0idauhvj2nm9nkp0lcgkd7-yw5rqx3wn4`. Every commit carries it as a `Ref-ID:` trailer.
+- Formerly the mini project Sonic Veil. Its reference ID `yfu0idauhvj2nm9nkp0lcgkd7-yw5rqx3wn4` was retired on promotion, 2026-10-03: commits up to the rename carry it as a `Ref-ID:` trailer, later ones do not.
 - Non-code facts live on the Notion project page, not in this repo. Do not create `STATE.md`, `DECISIONS.md`, `DRIFT.md`, `TECH-STACK.md` or `DIRECTORY-STRUCTURE.md` here.
 - There is no `package.json`. The quality gate is cargo, and it runs on GitHub Actions because this PC has no Rust toolchain:
   - `check` (writes): `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`

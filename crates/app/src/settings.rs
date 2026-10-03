@@ -7,8 +7,8 @@
 
 use std::ffi::c_void;
 
-use sonic_veil_core::color::{Rgba, hsv_to_rgb, parse_hex, rgb_to_hsv, to_hex, with_alpha};
-use sonic_veil_core::config::*;
+use deskbeat_core::color::{Rgba, hsv_to_rgb, parse_hex, rgb_to_hsv, to_hex, with_alpha};
+use deskbeat_core::config::*;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
@@ -375,7 +375,7 @@ impl Panel {
         let (ax, ay, aw, ah) = window::work_area();
         let bounds = (ax + (aw - w) / 2, ay + (ah - h) / 2, w, h);
 
-        let hwnd = window::create_panel(w!("Sonic Veil settings"), style, bounds)?;
+        let hwnd = window::create_panel(w!("Deskbeat settings"), style, bounds)?;
         let dark = BOOL(1);
         unsafe {
             // Cosmetic: without it the title bar is white above a dark panel.
@@ -1093,7 +1093,7 @@ fn general(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.toggle("Start with Windows", &mut autostart)?;
     ui.toggle_hidden = hidden != ui.status.hidden;
     ui.toggle_autostart = autostart != ui.status.autostart;
-    if ui.action("Sonic Veil", "Quit")? {
+    if ui.action("Deskbeat", "Quit")? {
         ui.quit = true;
     }
     Ok(())

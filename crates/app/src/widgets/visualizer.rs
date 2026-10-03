@@ -4,11 +4,11 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use deskbeat_core::bands::{BandMap, hann_window, settle};
+use deskbeat_core::color::{Rgba, mix, parse_hex};
+use deskbeat_core::config::{VisualizerCfg, VisualizerColor, VisualizerStyle};
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};
-use sonic_veil_core::bands::{BandMap, hann_window, settle};
-use sonic_veil_core::color::{Rgba, mix, parse_hex};
-use sonic_veil_core::config::{VisualizerCfg, VisualizerColor, VisualizerStyle};
 use windows::Win32::Graphics::Direct2D::ID2D1LinearGradientBrush;
 use windows::core::Result;
 

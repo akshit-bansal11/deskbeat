@@ -1,5 +1,5 @@
 [package]
-name = "sonic-veil"
+name = "deskbeat"
 description = "Desktop widgets for Spotify on Windows 11."
 version.workspace = true
 edition.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sonic-veil-core.workspace = true
+deskbeat-core.workspace = true
 rustfft.workspace = true
 serde_json.workspace = true
 # The `implement` macro expands to paths under `::windows_core`.

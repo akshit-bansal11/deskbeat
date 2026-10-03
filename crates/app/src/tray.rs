@@ -12,7 +12,7 @@ use windows::core::Result;
 use crate::window::WM_APP_TRAY;
 
 const ICON_SIDE: usize = 32;
-const TIP: &str = "Sonic Veil: double-click for settings";
+const TIP: &str = "Deskbeat: double-click for settings";
 
 /// Three rounded bars on a violet tile, drawn into premultiplied BGRA. Made
 /// in code so the exe needs no resource file.

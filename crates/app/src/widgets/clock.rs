@@ -1,7 +1,7 @@
 //! Day, time and date, each placed and styled on its own.
 
-use sonic_veil_core::config::ClockRow;
-use sonic_veil_core::timefmt::{format, shows_seconds};
+use deskbeat_core::config::ClockRow;
+use deskbeat_core::timefmt::{format, shows_seconds};
 use windows::core::Result;
 
 use super::{Ctx, Part, Tick, Wake, Widget, draw_card, label_color, place_label};

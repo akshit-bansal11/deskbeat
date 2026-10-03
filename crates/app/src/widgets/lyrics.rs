@@ -1,10 +1,10 @@
 //! Synced lyrics: the current line in the middle, its neighbours fading away
 //! above and below, scrolling as the song moves on.
 
-use sonic_veil_core::clock::{Anchor, Clock, find_line_index, find_word_index};
-use sonic_veil_core::color::{Rgba, mix, parse_hex, with_alpha};
-use sonic_veil_core::config::{Align, LyricsMode};
-use sonic_veil_core::timing::Line;
+use deskbeat_core::clock::{Anchor, Clock, find_line_index, find_word_index};
+use deskbeat_core::color::{Rgba, mix, parse_hex, with_alpha};
+use deskbeat_core::config::{Align, LyricsMode};
+use deskbeat_core::timing::Line;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 use windows::core::Result;
 
@@ -429,8 +429,8 @@ impl Widget for LyricsView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sonic_veil_core::lrc::parse_lrc;
-    use sonic_veil_core::timing::normalize_lines;
+    use deskbeat_core::lrc::parse_lrc;
+    use deskbeat_core::timing::normalize_lines;
 
     fn lines() -> Vec<Line> {
         let lrc = "[00:10.00] one two\n[00:12.00] three\n[00:40.00] four";

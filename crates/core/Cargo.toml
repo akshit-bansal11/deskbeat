@@ -1,6 +1,6 @@
 [package]
-name = "sonic-veil-core"
-description = "Pure logic for Sonic Veil: lyric parsing and timing, the sync clock, band mapping, config."
+name = "deskbeat-core"
+description = "Pure logic for Deskbeat: lyric parsing and timing, the sync clock, band mapping, config."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -6,11 +6,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use sonic_veil_core::color::{accent_from_bgra, downsample_bgra};
-use sonic_veil_core::config::{Config, LyricsMode, PlayerLayout, Preset, VisualizerStyle};
-use sonic_veil_core::lrc::parse_lrc;
-use sonic_veil_core::timefmt::LocalTime;
-use sonic_veil_core::timing::normalize_lines;
+use deskbeat_core::color::{accent_from_bgra, downsample_bgra};
+use deskbeat_core::config::{Config, LyricsMode, PlayerLayout, Preset, VisualizerStyle};
+use deskbeat_core::lrc::parse_lrc;
+use deskbeat_core::timefmt::LocalTime;
+use deskbeat_core::timing::normalize_lines;
 use windows::Win32::Foundation::{E_FAIL, GENERIC_WRITE};
 use windows::Win32::Graphics::Imaging::*;
 use windows::Win32::System::Com::{
@@ -171,7 +171,7 @@ pub fn run(dir: &Path) -> Result<()> {
     // Bars hanging from the top edge of the screen.
     let mut hanging = Config::default();
     hanging.visualizer.flip_y = true;
-    hanging.visualizer.frame.anchor = sonic_veil_core::config::Anchor::Top;
+    hanging.visualizer.frame.anchor = deskbeat_core::config::Anchor::Top;
     hanging.clock.frame.y = 200;
     looks.push(("flipped".to_owned(), hanging));
 

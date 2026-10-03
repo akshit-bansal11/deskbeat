@@ -1,10 +1,10 @@
-# Sonic Veil
+# Deskbeat
 
 Desktop widgets for Spotify on Windows 11, in one small native app: a spectrum visualizer, synced lyrics, a clock, and a now-playing player.
 
 It is built as a light alternative to a Rainmeter setup. Widgets redraw only when something changes, and nothing is drawn at all while Spotify is silent or a window covers the desktop.
 
-> **Pre-release.** The app has not yet been run against a live Spotify session. See [What has and has not been tested](#what-has-and-has-not-been-tested).
+> Formerly Sonic Veil. Settings from that name are carried over the first time `deskbeat.exe` runs. What is and is not verified is listed under [What has and has not been tested](#what-has-and-has-not-been-tested).
 
 ## What you get
 
@@ -19,13 +19,13 @@ There is no Spotify login and no client ID: track details and controls come from
 
 ## Install
 
-Download `sonic-veil.exe` from [Releases](https://github.com/akshit-bansal11/sonic-veil/releases) and run it. There is no installer. The exe is unsigned, so Windows SmartScreen will warn the first time: choose **More info**, then **Run anyway**.
+Download `deskbeat.exe` from [Releases](https://github.com/akshit-bansal11/deskbeat/releases) and run it. There is no installer. The exe is unsigned, so Windows SmartScreen will warn the first time: choose **More info**, then **Run anyway**.
 
 It needs Windows 11 and the Spotify desktop app playing on the same PC. Playback sent to another device through Spotify Connect is not seen.
 
 ## Use
 
-Sonic Veil lives in the notification area. Double-click its icon for settings. There is no menu: everything, including quitting and starting with Windows, is in the settings panel.
+Deskbeat lives in the notification area. Double-click its icon for settings. There is no menu: everything, including quitting and starting with Windows, is in the settings panel.
 
 | Hotkey | Does |
 | --- | --- |
@@ -47,10 +47,10 @@ Every piece of text has its own font, size, weight, colour, opacity, letter spac
 Everything is stored in one file, which you can also edit by hand. It reloads when you save:
 
 ```
-%APPDATA%\sonic-veil\config.toml
+%APPDATA%\deskbeat\config.toml
 ```
 
-To use a font without installing it in Windows, put its `.ttf` or `.otf` file in `%APPDATA%\sonic-veil\fonts` and restart the app. The clock's day and time default to Anurati and Quicksand, the pairing the Mond Rainmeter skin uses; they are not shipped with the app, and the theme font is used until they are in that folder.
+To use a font without installing it in Windows, put its `.ttf` or `.otf` file in `%APPDATA%\deskbeat\fonts` and restart the app. The clock's day and time default to Anurati and Quicksand, the pairing the Mond Rainmeter skin uses; they are not shipped with the app, and the theme font is used until they are in that folder.
 
 Every colour setting has a picker: the last chip in its row opens a colour square, a hue bar and a hex field you can type into.
 
@@ -60,10 +60,10 @@ Widgets can sit on the desktop under your windows (the default), behave like a n
 
 ## If a widget stays empty
 
-Sonic Veil has no console, so its diagnostics write to a file. In a terminal:
+Deskbeat has no console, so its diagnostics write to a file. In a terminal:
 
 ```
-sonic-veil.exe --probe > probe.txt
+deskbeat.exe --probe > probe.txt
 ```
 
 With Spotify playing, this records for eight seconds what Windows reports about the track and how loud Spotify's audio is. Two more:
@@ -71,23 +71,27 @@ With Spotify playing, this records for eight seconds what Windows reports about 
 - `--probe-system` listens to everything the PC plays instead of Spotify alone.
 - `--probe-lyrics "Title" "Artist"` looks one track up, for word timing and on LRCLIB.
 
-Errors are logged to `%LOCALAPPDATA%\sonic-veil\sonic-veil.log`. The lyrics cache is in the same folder and is safe to delete.
+Errors are logged to `%LOCALAPPDATA%\deskbeat\deskbeat.log`. The lyrics cache is in the same folder and is safe to delete.
 
 ## What has and has not been tested
 
 Tested on a real Windows 11 desktop:
 
 - All four widgets draw, sit on the desktop layer, and cost no CPU while idle.
-- Lyrics lookup, title cleaning and the disk cache, against LRCLIB.
+- Lyrics lookup, title cleaning and the disk cache, against LRCLIB, and word timing from a LyricsPlus server.
 - Audio capture, both for one app and for the whole system.
-- Quitting from the tray.
+- Reading the track, position and album art from a running Spotify.
+- An older config file loading with its sizes and fonts intact.
 
-Not yet tested, because Spotify was not running when this was built:
+Checked only by automated tests and rendered snapshots, not by hand:
 
-- Reading the track, position and album art from Spotify.
+- The settings panel, the colour picker, dragging and multi-selecting elements in edit layout.
+- The word-by-word fill staying in time with a song as it plays.
 - The transport buttons and seeking.
-- Lyrics staying in time with Spotify's reported position.
 - Staying visible through Show Desktop (`Win+D`).
+- Settings carrying over from the Sonic Veil name.
+
+Word timing depends on community-run LyricsPlus servers. When none answers, lyrics fall back to line timing from LRCLIB.
 
 Memory use measured about 54 MB, above the 40 MB this was aiming for.
 
@@ -97,7 +101,7 @@ Memory use measured about 54 MB, above the 40 MB this was aiming for.
 cargo build --release
 ```
 
-The quality gate is `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`. `sonic-veil.exe --snapshot <dir>` renders every widget to PNG from made-up data, with no GPU or Spotify, which is how CI checks the drawing code.
+The quality gate is `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`. `deskbeat.exe --snapshot <dir>` renders every widget to PNG from made-up data, with no GPU or Spotify, which is how CI checks the drawing code.
 
 ## How it stays light
 

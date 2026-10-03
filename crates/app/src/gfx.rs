@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use sonic_veil_core::color::Rgba;
-use sonic_veil_core::config::Align;
+use deskbeat_core::color::Rgba;
+use deskbeat_core::config::Align;
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
 use windows::Win32::Graphics::Direct2D::Common::*;
 use windows::Win32::Graphics::Direct2D::*;
