@@ -35,6 +35,7 @@ use crate::capture::{self, Audio};
 use crate::gfx::{Gfx, Surface, TextStyle, rect};
 use crate::lyrics::{self, Lyrics, LyricsState};
 use crate::media::{self, Cmd, MediaState};
+use crate::settings::Panel;
 use crate::tray::{Item, Tray};
 use crate::widgets::{Action, Ctx, Kind, Wake, Widget};
 use crate::window::{self, Event, Mouse, Z};
@@ -76,6 +77,7 @@ const DEFAULT_CARD: Rgba = [0.063, 0.063, 0.078, 1.0];
 const OFFSET_STEP_MS: i32 = 100;
 /// Editors save in several writes; wait for them to finish before reloading.
 const RELOAD_DELAY_MS: f64 = 200.0;
+const SAVE_DELAY_MS: f64 = 500.0;
 /// Show Desktop reorders windows a moment after the foreground changes.
 const DESKTOP_RECHECK_MS: f64 = 250.0;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -156,7 +158,12 @@ struct App {
     cfg_broken: bool,
     cfg_watch: Option<HANDLE>,
     reload_at: Option<f64>,
+    /// Dragging a slider changes a setting many times a second; the file is
+    /// written once the changes stop.
+    save_at: Option<f64>,
+    hotkeys_on: bool,
     palette: Palette,
+    settings: Option<Panel>,
 
     media: MediaState,
     media_shared: Arc<Mutex<MediaState>>,
@@ -266,6 +273,9 @@ pub fn run() -> Result<()> {
         cfg_broken,
         cfg_watch,
         reload_at: None,
+        save_at: None,
+        hotkeys_on: false,
+        settings: None,
         media: MediaState::default(),
         media_tx: media::spawn(media_shared.clone(), notify),
         media_shared,
@@ -302,6 +312,9 @@ pub fn run() -> Result<()> {
     }
     app.apply_config();
     app.run_loop();
+    if app.save_at.is_some() {
+        app.save_config();
+    }
     app.tray.remove();
     Ok(())
 }
@@ -368,8 +381,15 @@ impl App {
             self.desktop_recheck_at = None;
             self.check_show_desktop(unsafe { GetForegroundWindow() });
         }
+        if self.save_at.is_some_and(|at| now >= at) {
+            self.save_at = None;
+            self.save_config();
+        }
         if self.device_lost {
             self.rebuild_graphics();
+        }
+        if self.settings.as_ref().is_some_and(|panel| panel.dirty) {
+            self.draw_settings();
         }
 
         let paused = self.fullscreen && self.cfg.general.pause_on_fullscreen && !self.edit;
@@ -416,7 +436,10 @@ impl App {
             });
         }
 
-        for deadline in [self.reload_at, self.desktop_recheck_at]
+        if self.settings.as_ref().is_some_and(|panel| panel.dirty) {
+            wake = Wake::Frame;
+        }
+        for deadline in [self.reload_at, self.save_at, self.desktop_recheck_at]
             .into_iter()
             .flatten()
         {
@@ -442,12 +465,49 @@ impl App {
         }
     }
 
+    /// Draws the settings panel and acts on whatever was clicked in it.
+    fn draw_settings(&mut self) {
+        let (_, _, aw, ah) = window::work_area();
+        let area = (
+            (aw as f32 / self.scale) as i32,
+            (ah as f32 / self.scale) as i32,
+        );
+        let accent = self.palette.accent(&self.media);
+        let mut cfg = self.cfg.clone();
+        let Some(panel) = &mut self.settings else {
+            return;
+        };
+        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, accent, self.edit, area);
+        let outcome = match drawn {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                log(&format!("drawing the settings panel failed: {error}"));
+                self.device_lost = true;
+                return;
+            }
+        };
+        if outcome.changed {
+            self.cfg = cfg.sanitized();
+            self.save_at = Some(now_ms() + SAVE_DELAY_MS);
+            self.apply_config();
+        }
+        if outcome.toggle_edit {
+            self.toggle_edit();
+        }
+        if outcome.open_config {
+            self.open_config_file();
+        }
+    }
+
     /// After a GPU reset or driver update every device object is dead.
     fn rebuild_graphics(&mut self) {
         let rebuilt = Gfx::new().and_then(|gfx| {
             for host in &mut self.hosts {
                 host.surface = gfx.surface(host.hwnd, host.size.0 as u32, host.size.1 as u32)?;
                 host.widget.reset();
+            }
+            if let Some(panel) = &mut self.settings {
+                panel.rebuild(&gfx)?;
             }
             Ok(gfx)
         });
@@ -490,7 +550,16 @@ impl App {
             Event::Foreground(hwnd) => self.foreground_changed(hwnd),
             Event::Moved(hwnd) => self.widget_moved(hwnd),
             Event::Mouse { hwnd, kind, x, y } => self.mouse(hwnd, kind, x, y),
-            Event::Wheel { .. } | Event::Close(_) => {}
+            Event::Wheel { hwnd, delta } => {
+                if let Some(panel) = self.settings.as_mut().filter(|panel| panel.hwnd == hwnd) {
+                    panel.wheel(delta);
+                }
+            }
+            Event::Close(hwnd) => {
+                if let Some(panel) = self.settings.take_if(|panel| panel.hwnd == hwnd) {
+                    panel.close();
+                }
+            }
         }
     }
 
@@ -548,6 +617,10 @@ impl App {
     }
 
     fn mouse(&mut self, hwnd: HWND, kind: Mouse, x: i32, y: i32) {
+        if let Some(panel) = self.settings.as_mut().filter(|panel| panel.hwnd == hwnd) {
+            panel.mouse(kind, x as f32 / self.scale, y as f32 / self.scale);
+            return;
+        }
         let Some(index) = self.host_index(hwnd) else {
             return;
         };
@@ -599,7 +672,11 @@ impl App {
     }
 
     fn foreground_changed(&mut self, hwnd: HWND) {
-        if hwnd == self.main || self.host_index(hwnd).is_some() {
+        let own_panel = self
+            .settings
+            .as_ref()
+            .is_some_and(|panel| panel.hwnd == hwnd);
+        if hwnd == self.main || own_panel || self.host_index(hwnd).is_some() {
             return;
         }
         let fullscreen = window::is_fullscreen(hwnd);
@@ -725,6 +802,9 @@ impl App {
         if self.edit {
             self.hidden = false;
         }
+        if let Some(panel) = &mut self.settings {
+            panel.dirty = true;
+        }
         self.sync_windows();
         self.redraw_all();
     }
@@ -741,8 +821,18 @@ impl App {
     }
 
     fn open_settings(&mut self) {
-        // The settings panel is not built yet; the config file is the editor.
-        self.open_config_file();
+        if let Some(panel) = &self.settings {
+            panel.focus();
+            return;
+        }
+        match Panel::open(&self.gfx, self.scale) {
+            Ok(panel) => self.settings = Some(panel),
+            Err(error) => {
+                // The panel is a convenience; the file is always editable.
+                log(&format!("could not open the settings panel: {error}"));
+                self.open_config_file();
+            }
+        }
     }
 
     fn open_config_file(&mut self) {
@@ -757,6 +847,7 @@ impl App {
     // ----- config ----------------------------------------------------------
 
     fn save_config(&mut self) {
+        self.save_at = None;
         let text = self.cfg.to_toml();
         let written = std::fs::create_dir_all(config_dir()).and_then(|()| {
             if self.cfg_broken {
@@ -809,22 +900,24 @@ impl App {
                 .then_some(self.cfg.visualizer.source),
         );
 
-        unsafe {
+        if self.cfg.general.hotkeys != self.hotkeys_on {
+            self.hotkeys_on = self.cfg.general.hotkeys;
+            let modifiers = MOD_CONTROL | MOD_ALT | MOD_NOREPEAT;
             for (id, key) in HOTKEYS {
-                // Unregistering one that was never registered fails harmlessly.
-                let _ = UnregisterHotKey(Some(self.main), id);
-                if self.cfg.general.hotkeys
-                    && RegisterHotKey(
-                        Some(self.main),
-                        id,
-                        MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
-                        key,
-                    )
-                    .is_err()
-                {
+                let changed = unsafe {
+                    if self.hotkeys_on {
+                        RegisterHotKey(Some(self.main), id, modifiers, key)
+                    } else {
+                        UnregisterHotKey(Some(self.main), id)
+                    }
+                };
+                if changed.is_err() && self.hotkeys_on {
                     log(&format!("hotkey {id} is taken by another app"));
                 }
             }
+        }
+        if let Some(panel) = &mut self.settings {
+            panel.dirty = true;
         }
 
         if self.cfg.lyrics.enabled == matches!(self.lyrics, Lyrics::None) {

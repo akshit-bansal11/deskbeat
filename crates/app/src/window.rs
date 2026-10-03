@@ -27,6 +27,8 @@ pub const WM_APP_LYRICS: u32 = WM_APP + 2;
 pub const WM_APP_AUDIO: u32 = WM_APP + 3;
 pub const WM_APP_TRAY: u32 = WM_APP + 4;
 pub const WM_APP_SHOW_SETTINGS: u32 = WM_APP + 5;
+/// The `windows` crate keeps this one under the Controls feature.
+const WM_MOUSELEAVE: u32 = 0x02A3;
 
 pub const CLASS: PCWSTR = w!("SonicVeil");
 pub const MAIN_TITLE: PCWSTR = w!("Sonic Veil");
@@ -302,14 +304,13 @@ pub fn create_widget(bounds: (i32, i32, i32, i32)) -> Result<HWND> {
     Ok(hwnd)
 }
 
-pub fn create_panel(title: PCWSTR, bounds: (i32, i32, i32, i32)) -> Result<HWND> {
-    create(
-        Role::Panel,
-        WS_EX_NOREDIRECTIONBITMAP,
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-        title,
-        bounds,
-    )
+/// An ordinary captioned window, for the settings panel.
+pub fn create_panel(
+    title: PCWSTR,
+    style: WINDOW_STYLE,
+    bounds: (i32, i32, i32, i32),
+) -> Result<HWND> {
+    create(Role::Panel, WS_EX_NOREDIRECTIONBITMAP, style, title, bounds)
 }
 
 /// Click-through windows let every mouse event fall to whatever is beneath.

@@ -12,6 +12,7 @@ mod capture;
 mod gfx;
 mod lyrics;
 mod media;
+mod settings;
 mod snapshot;
 mod tray;
 mod widgets;

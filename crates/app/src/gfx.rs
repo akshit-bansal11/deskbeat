@@ -297,6 +297,17 @@ impl Gfx {
         unsafe { self.rt.FillRectangle(&r, self.solid(c)) };
     }
 
+    /// Restricts drawing to `r` until `pop_clip`.
+    pub fn push_clip(&self, r: D2D_RECT_F) {
+        unsafe {
+            self.rt.PushAxisAlignedClip(&r, D2D1_ANTIALIAS_MODE_ALIASED);
+        }
+    }
+
+    pub fn pop_clip(&self) {
+        unsafe { self.rt.PopAxisAlignedClip() };
+    }
+
     pub fn fill_round(&self, r: D2D_RECT_F, radius: f32, c: Rgba) {
         unsafe {
             self.rt

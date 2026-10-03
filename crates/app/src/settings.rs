@@ -1,0 +1,807 @@
+//! The settings panel: a small immediate-mode UI drawn with the same
+//! Direct2D context as the widgets. Each control reads and writes one config
+//! field in place, so there is no second copy of the settings to keep in step.
+//!
+//! Free-form values (a custom hex colour, any installed font, a hand-written
+//! clock format) are not editable here; the config file takes those.
+
+use std::ffi::c_void;
+
+use sonic_veil_core::color::{Rgba, parse_hex, with_alpha};
+use sonic_veil_core::config::*;
+use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
+use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
+use windows::Win32::UI::WindowsAndMessaging::{
+    AdjustWindowRectEx, DestroyWindow, GetClientRect, SW_SHOWNORMAL, SetForegroundWindow,
+    ShowWindow, WINDOW_EX_STYLE, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+};
+use windows::core::{BOOL, Result, w};
+
+use crate::gfx::{Gfx, Surface, TextStyle, rect};
+use crate::widgets::Kind;
+use crate::window::{self, Mouse};
+
+const WIDTH: f32 = 470.0;
+const HEIGHT: f32 = 680.0;
+const MARGIN: f32 = 22.0;
+const TABS_HEIGHT: f32 = 52.0;
+const FOOTER_HEIGHT: f32 = 64.0;
+const ROW: f32 = 38.0;
+const COLOR_ROW: f32 = 62.0;
+/// Share of a row's width given to the control rather than the label.
+const CONTROL_SHARE: f32 = 0.56;
+const WHEEL_STEP: f32 = 56.0;
+
+const BACKGROUND: Rgba = [0.075, 0.075, 0.095, 1.0];
+const TEXT: Rgba = [1.0, 1.0, 1.0, 0.92];
+const DIM: Rgba = [1.0, 1.0, 1.0, 0.56];
+const TRACK: Rgba = [1.0, 1.0, 1.0, 0.14];
+
+const TABS: [&str; 5] = ["General", "Clock", "Player", "Lyrics", "Visualizer"];
+const SWATCHES: [&str; 10] = [
+    "#FFFFFF", "#1ED760", "#7C5CFF", "#21D4FD", "#FF3DCB", "#FF6B6B", "#FFB547", "#F9F871",
+    "#101014", "#000000",
+];
+const FONTS: [(&str, &str); 7] = [
+    ("Segoe UI Variable Display", "Segoe UI Variable"),
+    ("Segoe UI", "Segoe UI"),
+    ("Bahnschrift", "Bahnschrift"),
+    ("Cascadia Code", "Cascadia Code"),
+    ("Georgia", "Georgia"),
+    ("Consolas", "Consolas"),
+    ("Arial", "Arial"),
+];
+const TIME_FORMATS: [(&str, &str); 4] = [
+    ("%H:%M", "21:47"),
+    ("%H:%M:%S", "21:47:09"),
+    ("%l:%M %p", "9:47 PM"),
+    ("%l:%M", "9:47"),
+];
+const DAY_FORMATS: [(&str, &str); 4] = [
+    ("%A", "Saturday"),
+    ("%a", "Sat"),
+    ("%A, %e %B", "Saturday, 3 October"),
+    ("", "Hidden"),
+];
+const DATE_FORMATS: [(&str, &str); 5] = [
+    ("%e %B %Y", "3 October 2026"),
+    ("%B %e, %Y", "October 3, 2026"),
+    ("%d/%m/%Y", "03/10/2026"),
+    ("%Y-%m-%d", "2026-10-03"),
+    ("", "Hidden"),
+];
+const ANCHORS: [(Anchor, &str); 9] = [
+    (Anchor::TopLeft, "Top left"),
+    (Anchor::Top, "Top"),
+    (Anchor::TopRight, "Top right"),
+    (Anchor::Left, "Left"),
+    (Anchor::Center, "Centre"),
+    (Anchor::Right, "Right"),
+    (Anchor::BottomLeft, "Bottom left"),
+    (Anchor::Bottom, "Bottom"),
+    (Anchor::BottomRight, "Bottom right"),
+];
+const ALIGNS: [(Align, &str); 3] = [
+    (Align::Left, "Left"),
+    (Align::Center, "Centre"),
+    (Align::Right, "Right"),
+];
+
+/// What the user did in the panel that the app has to act on.
+#[derive(Default)]
+pub struct Outcome {
+    /// A setting changed and `cfg` holds the new value.
+    pub changed: bool,
+    pub toggle_edit: bool,
+    pub open_config: bool,
+}
+
+pub struct Panel {
+    pub hwnd: HWND,
+    surface: Surface,
+    size: (u32, u32),
+    tab: usize,
+    scroll: f32,
+    mouse: (f32, f32),
+    down: bool,
+    /// The button went down, or came up, since the last draw.
+    pressed: bool,
+    released: bool,
+    /// The slider being dragged.
+    active: Option<u32>,
+    pub dirty: bool,
+}
+
+fn client_size(hwnd: HWND) -> (u32, u32) {
+    let mut r = RECT::default();
+    let _ = unsafe { GetClientRect(hwnd, &mut r) };
+    (r.right.max(1) as u32, r.bottom.max(1) as u32)
+}
+
+impl Panel {
+    pub fn open(gfx: &Gfx, scale: f32) -> Result<Self> {
+        let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+        let mut outer = RECT {
+            left: 0,
+            top: 0,
+            right: (WIDTH * scale) as i32,
+            bottom: (HEIGHT * scale) as i32,
+        };
+        unsafe { AdjustWindowRectEx(&mut outer, style, false, WINDOW_EX_STYLE(0))? };
+        let (w, h) = (outer.right - outer.left, outer.bottom - outer.top);
+        let (ax, ay, aw, ah) = window::work_area();
+        let bounds = (ax + (aw - w) / 2, ay + (ah - h) / 2, w, h);
+
+        let hwnd = window::create_panel(w!("Sonic Veil settings"), style, bounds)?;
+        let dark = BOOL(1);
+        unsafe {
+            // Cosmetic: without it the title bar is white above a dark panel.
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                (&raw const dark).cast::<c_void>(),
+                size_of::<BOOL>() as u32,
+            );
+            let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
+            let _ = SetForegroundWindow(hwnd);
+        }
+        let size = client_size(hwnd);
+        Ok(Self {
+            hwnd,
+            surface: gfx.surface(hwnd, size.0, size.1)?,
+            size,
+            tab: 0,
+            scroll: 0.0,
+            mouse: (-1.0, -1.0),
+            down: false,
+            pressed: false,
+            released: false,
+            active: None,
+            dirty: true,
+        })
+    }
+
+    pub fn close(&self) {
+        let _ = unsafe { DestroyWindow(self.hwnd) };
+    }
+
+    pub fn focus(&self) {
+        unsafe {
+            let _ = ShowWindow(self.hwnd, SW_SHOWNORMAL);
+            let _ = SetForegroundWindow(self.hwnd);
+        }
+    }
+
+    /// After a graphics device reset.
+    pub fn rebuild(&mut self, gfx: &Gfx) -> Result<()> {
+        self.surface = gfx.surface(self.hwnd, self.size.0, self.size.1)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    pub fn mouse(&mut self, kind: Mouse, x: f32, y: f32) {
+        match kind {
+            Mouse::Down => {
+                self.down = true;
+                self.pressed = true;
+                self.mouse = (x, y);
+            }
+            Mouse::Up => {
+                self.down = false;
+                self.released = true;
+                self.mouse = (x, y);
+            }
+            Mouse::Move => self.mouse = (x, y),
+            Mouse::Leave => {
+                if !self.down {
+                    self.mouse = (-1.0, -1.0);
+                }
+            }
+        }
+        self.dirty = true;
+    }
+
+    pub fn wheel(&mut self, delta: i32) {
+        self.scroll -= delta as f32 / 120.0 * WHEEL_STEP;
+        self.dirty = true;
+    }
+
+    /// Draws the panel and applies whatever the pointer did to `cfg`.
+    /// `area` is the work area in display-independent pixels.
+    pub fn draw(
+        &mut self,
+        gfx: &mut Gfx,
+        cfg: &mut Config,
+        scale: f32,
+        accent: Rgba,
+        edit: bool,
+        area: (i32, i32),
+    ) -> Result<Outcome> {
+        let (w, h) = (self.size.0 as f32 / scale, self.size.1 as f32 / scale);
+        let mut outcome = Outcome::default();
+        let font = cfg.theme.font.clone();
+        // Set when this pass changed something the next pass has to show.
+        let mut again = false;
+
+        gfx.begin(&self.surface);
+        gfx.set_transform(scale, 0.0, 0.0);
+        gfx.fill_rect(rect(0.0, 0.0, w, h), BACKGROUND);
+
+        let view = (TABS_HEIGHT, h - FOOTER_HEIGHT);
+        let mut ui = Ui {
+            g: &mut *gfx,
+            font: &font,
+            accent,
+            left: MARGIN,
+            width: w - 2.0 * MARGIN,
+            y: TABS_HEIGHT + 6.0 - self.scroll,
+            mouse: self.mouse,
+            pressed: self.pressed,
+            down: self.down,
+            released: self.released,
+            active: &mut self.active,
+            next_id: 0,
+            changed: false,
+            view,
+            area,
+        };
+
+        ui.g.push_clip(rect(0.0, view.0, w, view.1 - view.0));
+        let built = match self.tab {
+            0 => general(&mut ui, cfg),
+            1 => clock(&mut ui, cfg),
+            2 => player(&mut ui, cfg),
+            3 => lyrics(&mut ui, cfg),
+            _ => visualizer(&mut ui, cfg),
+        };
+        ui.g.pop_clip();
+        let content_height = ui.y + self.scroll - TABS_HEIGHT + 12.0;
+
+        // Tabs and footer sit outside the scrolling area.
+        ui.view = (0.0, h);
+        let tab_width = w / TABS.len() as f32;
+        for (i, name) in TABS.iter().enumerate() {
+            let cell = rect(tab_width * i as f32, 0.0, tab_width, TABS_HEIGHT - 8.0);
+            let selected = self.tab == i;
+            if ui.clicked(cell) && !selected {
+                self.tab = i;
+                self.scroll = 0.0;
+                again = true;
+            }
+            let color = if selected { TEXT } else { DIM };
+            let weight = if selected { 600 } else { 400 };
+            ui.text(name, cell, 13.0, weight, Align::Center, color)?;
+            if selected {
+                ui.g.fill_rect(
+                    rect(cell.left + 14.0, cell.bottom - 2.0, tab_width - 28.0, 2.0),
+                    accent,
+                );
+            }
+        }
+        ui.g.fill_rect(rect(0.0, TABS_HEIGHT - 8.0, w, 1.0), TRACK);
+
+        let footer = h - FOOTER_HEIGHT;
+        ui.g.fill_rect(rect(0.0, footer, w, 1.0), TRACK);
+        let half = (w - 2.0 * MARGIN - 10.0) / 2.0;
+        let label = if edit { "Done editing" } else { "Edit layout" };
+        outcome.toggle_edit = ui.button(label, rect(MARGIN, footer + 14.0, half, 36.0), edit)?;
+        outcome.open_config = ui.button(
+            "Open config file",
+            rect(MARGIN + half + 10.0, footer + 14.0, half, 36.0),
+            false,
+        )?;
+
+        outcome.changed = ui.changed;
+        let ended = gfx.end(&self.surface);
+
+        let max_scroll = (content_height - (view.1 - view.0)).max(0.0);
+        let clamped = self.scroll.clamp(0.0, max_scroll);
+        self.dirty = again || outcome.changed || clamped != self.scroll;
+        self.scroll = clamped;
+        self.pressed = false;
+        self.released = false;
+
+        ended.and(built)?;
+        Ok(outcome)
+    }
+}
+
+/// One frame of the immediate-mode UI.
+struct Ui<'a> {
+    g: &'a mut Gfx,
+    font: &'a str,
+    accent: Rgba,
+    left: f32,
+    width: f32,
+    /// Top of the next row.
+    y: f32,
+    mouse: (f32, f32),
+    pressed: bool,
+    down: bool,
+    released: bool,
+    active: &'a mut Option<u32>,
+    next_id: u32,
+    changed: bool,
+    /// The vertical band in which controls are visible and take input.
+    view: (f32, f32),
+    area: (i32, i32),
+}
+
+impl Ui<'_> {
+    fn hot(&self, r: D2D_RECT_F) -> bool {
+        let (x, y) = self.mouse;
+        x >= r.left && x < r.right && y >= r.top.max(self.view.0) && y < r.bottom.min(self.view.1)
+    }
+
+    fn clicked(&self, r: D2D_RECT_F) -> bool {
+        self.released && self.active.is_none() && self.hot(r)
+    }
+
+    /// Draws one line of text vertically centred in `r`.
+    fn text(
+        &mut self,
+        text: &str,
+        r: D2D_RECT_F,
+        size: f32,
+        weight: u32,
+        align: Align,
+        color: Rgba,
+    ) -> Result<()> {
+        let style = TextStyle {
+            font: self.font,
+            size,
+            weight,
+            align,
+            wrap: false,
+        };
+        let (w, h) = (r.right - r.left, r.bottom - r.top);
+        let layout = self.g.layout(text, &style, w, h)?;
+        let height = Gfx::measure(&layout).1;
+        self.g
+            .draw_text(&layout, r.left, r.top + (h - height) / 2.0, color, false);
+        Ok(())
+    }
+
+    /// Claims the next row. Returns the whole row and the control's part of it.
+    fn row(&mut self, label: &str, height: f32) -> Result<(D2D_RECT_F, D2D_RECT_F)> {
+        let row = rect(self.left, self.y, self.width, height);
+        self.y += height;
+        let label_width = self.width * (1.0 - CONTROL_SHARE);
+        self.text(
+            label,
+            rect(row.left, row.top, label_width - 8.0, ROW),
+            13.5,
+            400,
+            Align::Left,
+            TEXT,
+        )?;
+        let control = rect(
+            row.left + label_width,
+            row.top,
+            self.width - label_width,
+            height,
+        );
+        Ok((row, control))
+    }
+
+    fn header(&mut self, title: &str) -> Result<()> {
+        self.y += 10.0;
+        let r = rect(self.left, self.y, self.width, 26.0);
+        self.y += 28.0;
+        self.text(
+            &title.to_uppercase(),
+            r,
+            11.0,
+            700,
+            Align::Left,
+            self.accent,
+        )
+    }
+
+    fn button(&mut self, label: &str, r: D2D_RECT_F, lit: bool) -> Result<bool> {
+        let fill = if lit {
+            with_alpha(self.accent, 0.9)
+        } else if self.hot(r) {
+            [1.0, 1.0, 1.0, 0.2]
+        } else {
+            TRACK
+        };
+        self.g.fill_round(r, 9.0, fill);
+        let color = if lit { [0.0, 0.0, 0.0, 0.9] } else { TEXT };
+        self.text(label, r, 13.0, 600, Align::Center, color)?;
+        Ok(self.clicked(r))
+    }
+
+    fn toggle(&mut self, label: &str, value: &mut bool) -> Result<()> {
+        let (row, control) = self.row(label, ROW)?;
+        if self.clicked(row) {
+            *value = !*value;
+            self.changed = true;
+        }
+        let mid = row.top + ROW / 2.0;
+        let track = rect(control.right - 40.0, mid - 11.0, 40.0, 22.0);
+        let fill = if *value { self.accent } else { TRACK };
+        self.g.fill_round(track, 11.0, fill);
+        let knob = if *value {
+            track.right - 11.0
+        } else {
+            track.left + 11.0
+        };
+        self.g.fill_circle(knob, mid, 8.0, [1.0; 4]);
+        Ok(())
+    }
+
+    /// A slider over `min..=max` that snaps to `step`.
+    fn slider(
+        &mut self,
+        label: &str,
+        value: &mut f32,
+        min: f32,
+        max: f32,
+        step: f32,
+    ) -> Result<()> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let (row, control) = self.row(label, ROW)?;
+        let mid = row.top + ROW / 2.0;
+        let track = rect(
+            control.left,
+            mid - 2.0,
+            control.right - control.left - 56.0,
+            4.0,
+        );
+        let grab = rect(
+            track.left - 8.0,
+            row.top,
+            track.right - track.left + 16.0,
+            ROW,
+        );
+
+        if self.pressed && self.active.is_none() && self.hot(grab) {
+            *self.active = Some(id);
+        }
+        if *self.active == Some(id) {
+            if self.down || self.released {
+                let t = ((self.mouse.0 - track.left) / (track.right - track.left)).clamp(0.0, 1.0);
+                let snapped = (min + ((max - min) * t / step).round() * step).clamp(min, max);
+                if snapped != *value {
+                    *value = snapped;
+                    self.changed = true;
+                }
+            }
+            if !self.down {
+                *self.active = None;
+            }
+        }
+
+        let t = ((*value - min) / (max - min)).clamp(0.0, 1.0);
+        let knob = track.left + (track.right - track.left) * t;
+        self.g.fill_round(track, 2.0, TRACK);
+        self.g.fill_round(
+            rect(track.left, track.top, knob - track.left, 4.0),
+            2.0,
+            self.accent,
+        );
+        self.g.fill_circle(knob, mid, 7.0, [1.0; 4]);
+
+        let shown = if step >= 1.0 {
+            format!("{value:.0}")
+        } else {
+            format!("{value:.2}")
+        };
+        let value_box = rect(control.right - 50.0, row.top, 50.0, ROW);
+        self.text(&shown, value_box, 12.5, 400, Align::Right, DIM)
+    }
+
+    fn slider_u32(
+        &mut self,
+        label: &str,
+        value: &mut u32,
+        min: u32,
+        max: u32,
+        step: u32,
+    ) -> Result<()> {
+        let mut float = *value as f32;
+        self.slider(label, &mut float, min as f32, max as f32, step as f32)?;
+        *value = float.round() as u32;
+        Ok(())
+    }
+
+    /// Steps through `options` with a click on either half of the control.
+    fn stepper(
+        &mut self,
+        label: &str,
+        current: Option<usize>,
+        labels: &[&str],
+    ) -> Result<Option<usize>> {
+        let (_, control) = self.row(label, ROW)?;
+        let pill = rect(
+            control.left,
+            control.top + 5.0,
+            control.right - control.left,
+            ROW - 10.0,
+        );
+        self.g.fill_round(
+            pill,
+            9.0,
+            if self.hot(pill) {
+                [1.0, 1.0, 1.0, 0.2]
+            } else {
+                TRACK
+            },
+        );
+        let shown = current.map_or("Custom", |i| labels[i]);
+        self.text(shown, pill, 13.0, 500, Align::Center, TEXT)?;
+        let arrow = |x: f32| rect(x, pill.top, 28.0, pill.bottom - pill.top);
+        self.text("‹", arrow(pill.left), 15.0, 400, Align::Center, DIM)?;
+        self.text("›", arrow(pill.right - 28.0), 15.0, 400, Align::Center, DIM)?;
+
+        if !self.clicked(pill) || labels.is_empty() {
+            return Ok(None);
+        }
+        let count = labels.len();
+        let forward = self.mouse.0 >= (pill.left + pill.right) / 2.0;
+        Ok(Some(match (current, forward) {
+            (Some(i), true) => (i + 1) % count,
+            (Some(i), false) => (i + count - 1) % count,
+            (None, _) => 0,
+        }))
+    }
+
+    /// Picks one of a few values of an enum.
+    fn choice<T: Copy + PartialEq>(
+        &mut self,
+        label: &str,
+        value: &mut T,
+        options: &[(T, &str)],
+    ) -> Result<()> {
+        let labels: Vec<&str> = options.iter().map(|(_, name)| *name).collect();
+        let current = options.iter().position(|(option, _)| option == value);
+        if let Some(index) = self.stepper(label, current, &labels)? {
+            *value = options[index].0;
+            self.changed = true;
+        }
+        Ok(())
+    }
+
+    /// Picks one of a few preset strings; anything else shows as "Custom".
+    fn choice_text(
+        &mut self,
+        label: &str,
+        value: &mut String,
+        options: &[(&str, &str)],
+    ) -> Result<()> {
+        let labels: Vec<&str> = options.iter().map(|(_, name)| *name).collect();
+        let current = options
+            .iter()
+            .position(|(option, _)| *option == value.as_str());
+        if let Some(index) = self.stepper(label, current, &labels)? {
+            *value = options[index].0.to_owned();
+            self.changed = true;
+        }
+        Ok(())
+    }
+
+    /// A row of swatches, preceded by named options such as "Auto".
+    fn color(&mut self, label: &str, value: &mut String, named: &[(&str, &str)]) -> Result<()> {
+        let (row, _) = self.row(label, COLOR_ROW)?;
+        let mut x = row.left;
+        let top = row.top + ROW - 4.0;
+
+        for (option, name) in named {
+            let pill = rect(x, top, 58.0, 22.0);
+            let selected = value.as_str() == *option;
+            if self.button(name, pill, selected)? && !selected {
+                *value = (*option).to_owned();
+                self.changed = true;
+            }
+            x += 64.0;
+        }
+        for swatch in SWATCHES {
+            let chip = rect(x, top, 22.0, 22.0);
+            let selected = value.eq_ignore_ascii_case(swatch);
+            if self.clicked(chip) && !selected {
+                *value = swatch.to_owned();
+                self.changed = true;
+            }
+            if selected {
+                self.g
+                    .stroke_round(rect(x - 2.5, top - 2.5, 27.0, 27.0), 8.0, self.accent, 2.0);
+            }
+            self.g
+                .fill_round(chip, 6.0, parse_hex(swatch).unwrap_or([1.0; 4]));
+            self.g.stroke_round(chip, 6.0, [1.0, 1.0, 1.0, 0.25], 1.0);
+            x += 28.0;
+        }
+        Ok(())
+    }
+
+    /// The rows every widget shares: where it sits and how solid it is.
+    fn placement(
+        &mut self,
+        kind: Kind,
+        cfg: &mut Config,
+        opacity: fn(&mut Config) -> &mut f32,
+    ) -> Result<()> {
+        self.header("Placement")?;
+        let frame = kind.frame_mut(cfg);
+        let before = frame.origin(self.area.0, self.area.1);
+        let mut anchor = frame.anchor;
+        self.choice("Measured from", &mut anchor, &ANCHORS)?;
+        if anchor != frame.anchor {
+            // Keep the widget where it is; only what its offsets mean changes.
+            frame.anchor = anchor;
+            frame.set_origin(before.0, before.1, self.area.0, self.area.1);
+        }
+        self.slider_u32("Width", &mut frame.w, 80, 1600, 10)?;
+        self.slider_u32("Height", &mut frame.h, 40, 1000, 10)?;
+        self.slider("Opacity", opacity(cfg), 0.0, 1.0, 0.05)
+    }
+}
+
+fn general(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
+    ui.header("Looks")?;
+    let width = (ui.width - 30.0) / 4.0;
+    for (i, preset) in Preset::ALL.into_iter().enumerate() {
+        let button = rect(ui.left + (width + 10.0) * i as f32, ui.y, width, 34.0);
+        if ui.button(preset.name(), button, false)? {
+            cfg.apply_preset(preset);
+            ui.changed = true;
+        }
+    }
+    ui.y += 42.0;
+
+    ui.header("Theme")?;
+    let theme = &mut cfg.theme;
+    ui.choice_text("Font", &mut theme.font, &FONTS)?;
+    ui.color("Accent", &mut theme.accent, &[("auto", "Album")])?;
+    ui.color("Text", &mut theme.text, &[])?;
+    ui.color("Card", &mut theme.card_color, &[])?;
+    ui.slider("Card opacity", &mut theme.card_opacity, 0.0, 1.0, 0.02)?;
+    ui.slider("Card corner", &mut theme.card_radius, 0.0, 40.0, 1.0)?;
+    ui.slider("Card border", &mut theme.card_border, 0.0, 0.5, 0.01)?;
+    ui.toggle("Shadow under text", &mut theme.text_shadow)?;
+
+    ui.header("Behaviour")?;
+    let general = &mut cfg.general;
+    ui.choice(
+        "Layer",
+        &mut general.layer,
+        &[
+            (Layer::Desktop, "On the desktop"),
+            (Layer::Normal, "Normal window"),
+            (Layer::Top, "Always on top"),
+        ],
+    )?;
+    ui.toggle(
+        "Pause behind fullscreen apps",
+        &mut general.pause_on_fullscreen,
+    )?;
+    ui.toggle(
+        "Hide when Spotify is closed",
+        &mut general.hide_without_spotify,
+    )?;
+    ui.toggle("Global hotkeys", &mut general.hotkeys)
+}
+
+fn clock(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
+    ui.header("Clock")?;
+    let c = &mut cfg.clock;
+    ui.toggle("Show", &mut c.enabled)?;
+    ui.toggle("Card behind it", &mut c.card)?;
+    ui.choice("Align", &mut c.align, &ALIGNS)?;
+    ui.choice_text("Time", &mut c.time_format, &TIME_FORMATS)?;
+    ui.choice_text("Day", &mut c.day_format, &DAY_FORMATS)?;
+    ui.choice_text("Date", &mut c.date_format, &DATE_FORMATS)?;
+    ui.slider("Time size", &mut c.time_size, 24.0, 240.0, 2.0)?;
+    ui.slider("Day and date size", &mut c.text_size, 10.0, 60.0, 1.0)?;
+    ui.slider_u32("Time weight", &mut c.time_weight, 100, 900, 100)?;
+    ui.placement(Kind::Clock, cfg, |cfg| &mut cfg.clock.opacity)
+}
+
+fn player(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
+    ui.header("Player")?;
+    let p = &mut cfg.player;
+    ui.toggle("Show", &mut p.enabled)?;
+    ui.choice(
+        "Background",
+        &mut p.background,
+        &[
+            (PlayerBackground::ArtBlur, "Blurred album art"),
+            (PlayerBackground::Card, "Card"),
+            (PlayerBackground::None, "None"),
+        ],
+    )?;
+    ui.toggle("Album art", &mut p.show_art)?;
+    ui.toggle("Progress bar", &mut p.show_progress)?;
+    ui.toggle("Buttons", &mut p.show_controls)?;
+    ui.slider("Title size", &mut p.title_size, 10.0, 48.0, 1.0)?;
+    ui.slider("Artist size", &mut p.artist_size, 9.0, 40.0, 1.0)?;
+    ui.placement(Kind::Player, cfg, |cfg| &mut cfg.player.opacity)
+}
+
+fn lyrics(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
+    ui.header("Lyrics")?;
+    let l = &mut cfg.lyrics;
+    ui.toggle("Show", &mut l.enabled)?;
+    ui.toggle("Card behind them", &mut l.card)?;
+    ui.choice(
+        "Highlight",
+        &mut l.mode,
+        &[
+            (LyricsMode::Line, "Line by line"),
+            (LyricsMode::Word, "Word by word"),
+        ],
+    )?;
+    ui.choice("Align", &mut l.align, &ALIGNS)?;
+    ui.slider("Text size", &mut l.size, 12.0, 96.0, 1.0)?;
+    ui.slider_u32("Weight", &mut l.weight, 100, 900, 100)?;
+    ui.slider_u32("Lines above", &mut l.lines_before, 0, 6, 1)?;
+    ui.slider_u32("Lines below", &mut l.lines_after, 0, 6, 1)?;
+    ui.slider("Line spacing", &mut l.line_gap, 0.0, 2.0, 0.05)?;
+    ui.color(
+        "Current line",
+        &mut l.active_color,
+        &[("text", "Text"), ("accent", "Accent")],
+    )?;
+    ui.slider("Other lines", &mut l.inactive_opacity, 0.0, 1.0, 0.02)?;
+
+    ui.header("Timing")?;
+    let mut offset = l.offset_ms as f32;
+    ui.slider("Show earlier (ms)", &mut offset, -3000.0, 3000.0, 50.0)?;
+    l.offset_ms = offset as i32;
+    ui.slider_u32("Scroll time (ms)", &mut l.scroll_ms, 0, 1000, 20)?;
+    ui.placement(Kind::Lyrics, cfg, |cfg| &mut cfg.lyrics.opacity)
+}
+
+fn visualizer(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
+    ui.header("Visualizer")?;
+    let v = &mut cfg.visualizer;
+    ui.toggle("Show", &mut v.enabled)?;
+    ui.toggle("Card behind it", &mut v.card)?;
+    ui.choice(
+        "Style",
+        &mut v.style,
+        &[
+            (VisualizerStyle::Bars, "Bars"),
+            (VisualizerStyle::Mirror, "Mirrored bars"),
+            (VisualizerStyle::Wave, "Wave"),
+        ],
+    )?;
+    ui.choice(
+        "Listens to",
+        &mut v.source,
+        &[
+            (AudioSource::Spotify, "Spotify only"),
+            (AudioSource::System, "Everything"),
+        ],
+    )?;
+    ui.slider_u32("Bars", &mut v.bars, 4, 160, 1)?;
+    ui.slider("Gap", &mut v.gap, 0.0, 0.9, 0.02)?;
+    ui.slider("Roundness", &mut v.radius, 0.0, 0.5, 0.05)?;
+    ui.toggle("Bass in the middle", &mut v.symmetric)?;
+
+    ui.header("Colour")?;
+    ui.choice(
+        "Colour",
+        &mut v.color,
+        &[
+            (VisualizerColor::Accent, "Accent"),
+            (VisualizerColor::Solid, "One colour"),
+            (VisualizerColor::Gradient, "Gradient"),
+        ],
+    )?;
+    ui.color("First colour", &mut v.color_a, &[])?;
+    ui.color("Second colour", &mut v.color_b, &[])?;
+
+    ui.header("Motion")?;
+    ui.slider("Sensitivity (dB)", &mut v.sensitivity, -20.0, 30.0, 1.0)?;
+    ui.slider("Rise (ms)", &mut v.attack_ms, 0.0, 200.0, 2.0)?;
+    ui.slider("Fall (ms)", &mut v.decay_ms, 20.0, 1000.0, 10.0)?;
+    ui.slider_u32("Frames per second", &mut v.fps, 15, 144, 1)?;
+    ui.slider("Treble boost", &mut v.tilt, 0.0, 9.0, 0.5)?;
+    ui.slider("Lowest pitch (Hz)", &mut v.min_hz, 20.0, 500.0, 10.0)?;
+    ui.slider("Highest pitch (Hz)", &mut v.max_hz, 4000.0, 20_000.0, 500.0)?;
+    ui.placement(Kind::Visualizer, cfg, |cfg| &mut cfg.visualizer.opacity)
+}
