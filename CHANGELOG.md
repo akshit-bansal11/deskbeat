@@ -13,12 +13,20 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 - The visualizer can be flipped left to right and upside down.
 - A centred player layout: album art, title, artist, buttons and progress
   stacked on the centre line.
+- The clock's day, time and date can each be hidden, and their order chosen.
+- The order of the player's art, text, buttons and progress can be chosen.
+- Lyrics: separate colours for the current line, the current word and the
+  other lines; an outline with its own colour and width; a shadow with its
+  own colour and strength.
 - Separate fonts for the clock's day row and its time and date rows.
 - Fonts placed in `%APPDATA%\sonic-veil\fonts` can be used without
   installing them in Windows.
 
 ### Changed
 
+- In word mode the rest of the current line is drawn in the current-line
+  colour, and the word being sung in its own colour, which defaults to the
+  accent.
 - The clock's day and time default to Anurati and Quicksand, the pairing the
   Mond Rainmeter skin uses. Without those fonts the theme font is used.
 - Widget width and height can be set up to the size of the screen.
