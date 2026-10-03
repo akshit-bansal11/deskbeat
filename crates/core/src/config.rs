@@ -166,6 +166,41 @@ pub enum Align {
     Right,
 }
 
+/// Rearranges `order` into a full ordering of `all`: repeats are dropped
+/// and anything left out is added at the end, so a hand-edited list can
+/// never lose a row for good.
+pub fn complete_order<T: Copy + PartialEq>(order: &mut Vec<T>, all: &[T]) {
+    let mut seen: Vec<T> = Vec::with_capacity(all.len());
+    for item in order.iter().chain(all) {
+        if !seen.contains(item) {
+            seen.push(*item);
+        }
+    }
+    *order = seen;
+}
+
+/// Puts `item` at `slot`, moving whatever was there to where `item` came
+/// from: the two swap, and nothing is ever listed twice.
+pub fn place<T: Copy + PartialEq>(order: &mut [T], slot: usize, item: T) {
+    if let Some(from) = order.iter().position(|current| *current == item)
+        && slot < order.len()
+    {
+        order.swap(slot, from);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClockRow {
+    Day,
+    Time,
+    Date,
+}
+
+impl ClockRow {
+    pub const ALL: [ClockRow; 3] = [ClockRow::Day, ClockRow::Time, ClockRow::Date];
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ClockCfg {
@@ -188,6 +223,11 @@ pub struct ClockCfg {
     pub text_size: f32,
     /// Font weight of the time, 100 to 900.
     pub time_weight: u32,
+    pub show_day: bool,
+    pub show_time: bool,
+    pub show_date: bool,
+    /// The rows from top to bottom.
+    pub order: Vec<ClockRow>,
     pub frame: Frame,
 }
 
@@ -209,6 +249,10 @@ impl Default for ClockCfg {
             time_size: 96.0,
             text_size: 20.0,
             time_weight: 300,
+            show_day: true,
+            show_time: true,
+            show_date: true,
+            order: ClockRow::ALL.to_vec(),
         }
     }
 }
@@ -222,6 +266,25 @@ pub enum PlayerBackground {
     #[default]
     ArtBlur,
     None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlayerPart {
+    Art,
+    /// Title and artist.
+    Text,
+    Controls,
+    Progress,
+}
+
+impl PlayerPart {
+    pub const ALL: [PlayerPart; 4] = [
+        PlayerPart::Art,
+        PlayerPart::Text,
+        PlayerPart::Controls,
+        PlayerPart::Progress,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -246,6 +309,9 @@ pub struct PlayerCfg {
     pub show_controls: bool,
     pub title_size: f32,
     pub artist_size: f32,
+    /// The parts from top to bottom. With the art on the left, the art is
+    /// skipped and the rest stack beside it.
+    pub order: Vec<PlayerPart>,
     pub frame: Frame,
 }
 
@@ -263,6 +329,7 @@ impl Default for PlayerCfg {
             show_controls: true,
             title_size: 18.0,
             artist_size: 14.0,
+            order: PlayerPart::ALL.to_vec(),
         }
     }
 }
@@ -293,9 +360,20 @@ pub struct LyricsCfg {
     pub lines_after: u32,
     /// Space between lines, as a fraction of the text size.
     pub line_gap: f32,
-    /// `"text"`, `"accent"`, or a hex colour.
+    /// Colour of the line being sung. Every lyric colour is `"text"`,
+    /// `"accent"`, or a hex colour.
     pub active_color: String,
+    /// Colour of the word being sung, in word mode.
+    pub word_color: String,
+    /// Colour of every other line, before `inactive_opacity` is applied.
+    pub inactive_color: String,
     pub inactive_opacity: f32,
+    /// Width of the outline around the text. 0 draws none.
+    pub stroke_width: f32,
+    pub stroke_color: String,
+    pub shadow_color: String,
+    /// How strong the shadow under the text is. 0 draws none.
+    pub shadow_opacity: f32,
     /// Positive shows lyrics earlier.
     pub offset_ms: i32,
     /// Duration of the scroll between lines. 0 disables it.
@@ -318,7 +396,13 @@ impl Default for LyricsCfg {
             lines_after: 2,
             line_gap: 0.55,
             active_color: "text".to_owned(),
+            word_color: "accent".to_owned(),
+            inactive_color: "text".to_owned(),
             inactive_opacity: 0.38,
+            stroke_width: 0.0,
+            stroke_color: "#000000".to_owned(),
+            shadow_color: "#000000".to_owned(),
+            shadow_opacity: 0.38,
             offset_ms: 0,
             scroll_ms: 380,
         }
@@ -520,17 +604,21 @@ impl Config {
         range(&mut c.time_size, 12.0, 400.0, 96.0);
         range(&mut c.text_size, 8.0, 120.0, 20.0);
         c.time_weight = c.time_weight.clamp(100, 900);
+        complete_order(&mut c.order, &ClockRow::ALL);
 
         let p = &mut self.player;
         frame(&mut p.frame);
         unit(&mut p.opacity);
         range(&mut p.title_size, 8.0, 72.0, 18.0);
         range(&mut p.artist_size, 8.0, 72.0, 14.0);
+        complete_order(&mut p.order, &PlayerPart::ALL);
 
         let l = &mut self.lyrics;
         frame(&mut l.frame);
         unit(&mut l.opacity);
         unit(&mut l.inactive_opacity);
+        unit(&mut l.shadow_opacity);
+        range(&mut l.stroke_width, 0.0, 6.0, 0.0);
         range(&mut l.size, 10.0, 160.0, 30.0);
         range(&mut l.line_gap, 0.0, 3.0, 0.55);
         l.weight = l.weight.clamp(100, 900);
@@ -725,6 +813,41 @@ mod tests {
 
         v.full_width = false;
         assert_eq!(v.placed(1920), v.frame);
+    }
+
+    #[test]
+    fn a_hand_edited_order_is_completed_not_trusted() {
+        let cfg = Config::from_toml(
+            "[clock]\norder = [\"date\", \"date\"]\n[player]\norder = [\"progress\", \"art\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.clock.order,
+            [ClockRow::Date, ClockRow::Day, ClockRow::Time]
+        );
+        assert_eq!(
+            cfg.player.order,
+            [
+                PlayerPart::Progress,
+                PlayerPart::Art,
+                PlayerPart::Text,
+                PlayerPart::Controls
+            ]
+        );
+        assert!(Config::from_toml("[clock]\norder = [\"noon\"]").is_err());
+    }
+
+    #[test]
+    fn placing_a_row_swaps_it_with_the_one_already_there() {
+        let mut order = ClockRow::ALL.to_vec();
+        place(&mut order, 0, ClockRow::Time);
+        assert_eq!(order, [ClockRow::Time, ClockRow::Day, ClockRow::Date]);
+        place(&mut order, 2, ClockRow::Time);
+        assert_eq!(order, [ClockRow::Date, ClockRow::Day, ClockRow::Time]);
+        // Out of range or already in place: nothing moves.
+        place(&mut order, 9, ClockRow::Day);
+        place(&mut order, 1, ClockRow::Day);
+        assert_eq!(order, [ClockRow::Date, ClockRow::Day, ClockRow::Time]);
     }
 
     #[test]

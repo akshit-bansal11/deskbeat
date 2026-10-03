@@ -1,6 +1,7 @@
 //! Day, time and date.
 
 use sonic_veil_core::color::with_alpha;
+use sonic_veil_core::config::ClockRow;
 use sonic_veil_core::timefmt::{format, shows_seconds};
 use windows::core::Result;
 
@@ -64,8 +65,8 @@ impl Widget for Clock {
         let (day_font, time_font) = (pick(&c.day_font), pick(&c.time_font));
 
         // Text, font, size, weight, colour, letter spacing, fraction of the row height kept.
-        let specs = [
-            (
+        let spec = |row: ClockRow| match row {
+            ClockRow::Day => c.show_day.then_some((
                 &self.shown[0],
                 &day_font,
                 c.day_size,
@@ -73,8 +74,8 @@ impl Widget for Clock {
                 with_alpha(ctx.accent, c.opacity),
                 c.day_size * 0.16,
                 1.0,
-            ),
-            (
+            )),
+            ClockRow::Time => c.show_time.then_some((
                 &self.shown[1],
                 &time_font,
                 c.time_size,
@@ -82,8 +83,8 @@ impl Widget for Clock {
                 with_alpha(ctx.text, c.opacity),
                 0.0,
                 TIME_ROW_TIGHTEN,
-            ),
-            (
+            )),
+            ClockRow::Date => c.show_date.then_some((
                 &self.shown[2],
                 &time_font,
                 c.text_size,
@@ -91,12 +92,14 @@ impl Widget for Clock {
                 with_alpha(ctx.text, 0.74 * c.opacity),
                 0.0,
                 1.0,
-            ),
-        ];
+            )),
+        };
 
         let mut rows = Vec::with_capacity(3);
         let mut total = 0.0;
-        for (text, font, size, weight, color, spacing, keep) in specs {
+        for (text, font, size, weight, color, spacing, keep) in
+            c.order.iter().filter_map(|&row| spec(row))
+        {
             if text.is_empty() {
                 continue;
             }

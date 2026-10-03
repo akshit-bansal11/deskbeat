@@ -93,6 +93,19 @@ const ANCHORS: [(Anchor, &str); 9] = [
     (Anchor::Bottom, "Bottom"),
     (Anchor::BottomRight, "Bottom right"),
 ];
+const CLOCK_ROWS: [(ClockRow, &str); 3] = [
+    (ClockRow::Day, "Day"),
+    (ClockRow::Time, "Time"),
+    (ClockRow::Date, "Date"),
+];
+const PLAYER_PARTS: [(PlayerPart, &str); 4] = [
+    (PlayerPart::Art, "Album art"),
+    (PlayerPart::Text, "Title and artist"),
+    (PlayerPart::Controls, "Buttons"),
+    (PlayerPart::Progress, "Progress"),
+];
+/// Colours a lyric setting can follow by name, ahead of the swatches.
+const THEME_COLORS: [(&str, &str); 2] = [("text", "Text"), ("accent", "Accent")];
 const ALIGNS: [(Align, &str); 3] = [
     (Align::Left, "Left"),
     (Align::Center, "Centre"),
@@ -674,6 +687,22 @@ impl Ui<'_> {
         Ok(())
     }
 
+    /// One stepper per position. Picking an item for a position swaps it
+    /// with whatever was there, so the list always holds each item once.
+    fn order<T: Copy + PartialEq>(
+        &mut self,
+        slots: &[&str],
+        order: &mut [T],
+        options: &[(T, &str)],
+    ) -> Result<()> {
+        for (slot, label) in slots.iter().enumerate().take(order.len()) {
+            let mut item = order[slot];
+            self.choice(label, &mut item, options)?;
+            place(order, slot, item);
+        }
+        Ok(())
+    }
+
     /// The rows every widget shares: where it sits and how solid it is.
     fn placement(
         &mut self,
@@ -750,6 +779,14 @@ fn clock(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.toggle("Show", &mut c.enabled)?;
     ui.toggle("Card behind it", &mut c.card)?;
     ui.choice("Align", &mut c.align, &ALIGNS)?;
+
+    ui.header("Rows")?;
+    ui.toggle("Show the day", &mut c.show_day)?;
+    ui.toggle("Show the time", &mut c.show_time)?;
+    ui.toggle("Show the date", &mut c.show_date)?;
+    ui.order(&["Top", "Middle", "Bottom"], &mut c.order, &CLOCK_ROWS)?;
+
+    ui.header("Text")?;
     ui.choice_text("Time", &mut c.time_format, &TIME_FORMATS)?;
     ui.choice_text("Day", &mut c.day_format, &DAY_FORMATS)?;
     ui.choice_text("Date", &mut c.date_format, &DATE_FORMATS)?;
@@ -794,6 +831,15 @@ fn player(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.toggle("Album art", &mut p.show_art)?;
     ui.toggle("Progress bar", &mut p.show_progress)?;
     ui.toggle("Buttons", &mut p.show_controls)?;
+
+    ui.header("Order, top to bottom")?;
+    ui.order(
+        &["First", "Second", "Third", "Fourth"],
+        &mut p.order,
+        &PLAYER_PARTS,
+    )?;
+
+    ui.header("Text")?;
     ui.slider("Title size", &mut p.title_size, 10.0, 48.0, 1.0)?;
     ui.slider("Artist size", &mut p.artist_size, 9.0, 40.0, 1.0)?;
     ui.placement(Kind::Player, cfg, |cfg| &mut cfg.player.opacity)
@@ -818,12 +864,24 @@ fn lyrics(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.slider_u32("Lines above", &mut l.lines_before, 0, 6, 1)?;
     ui.slider_u32("Lines below", &mut l.lines_after, 0, 6, 1)?;
     ui.slider("Line spacing", &mut l.line_gap, 0.0, 2.0, 0.05)?;
-    ui.color(
-        "Current line",
-        &mut l.active_color,
-        &[("text", "Text"), ("accent", "Accent")],
+
+    ui.header("Colours")?;
+    ui.color("Current line", &mut l.active_color, &THEME_COLORS)?;
+    ui.color("Current word", &mut l.word_color, &THEME_COLORS)?;
+    ui.color("Other lines", &mut l.inactive_color, &THEME_COLORS)?;
+    ui.slider(
+        "Other lines opacity",
+        &mut l.inactive_opacity,
+        0.0,
+        1.0,
+        0.02,
     )?;
-    ui.slider("Other lines", &mut l.inactive_opacity, 0.0, 1.0, 0.02)?;
+
+    ui.header("Outline and shadow")?;
+    ui.slider("Outline width", &mut l.stroke_width, 0.0, 6.0, 0.5)?;
+    ui.color("Outline colour", &mut l.stroke_color, &[])?;
+    ui.slider("Shadow strength", &mut l.shadow_opacity, 0.0, 1.0, 0.02)?;
+    ui.color("Shadow colour", &mut l.shadow_color, &[])?;
 
     ui.header("Timing")?;
     let mut offset = l.offset_ms as f32;

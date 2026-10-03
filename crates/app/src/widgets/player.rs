@@ -1,9 +1,10 @@
 //! Now playing: art, title, artist, transport buttons and a progress bar.
 
 use sonic_veil_core::color::{Rgba, with_alpha};
-use sonic_veil_core::config::{Align, PlayerBackground, PlayerLayout};
+use sonic_veil_core::config::{Align, PlayerBackground, PlayerLayout, PlayerPart};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::ID2D1Bitmap;
+use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 use windows::core::Result;
 
 use super::{Action, Ctx, Tick, Wake, Widget, clock_text, draw_card};
@@ -14,13 +15,15 @@ const PAD: f32 = 14.0;
 const GAP: f32 = 14.0;
 const BUTTON: f32 = 30.0;
 const BUTTON_GAP: f32 = 4.0;
+/// Space between the parts of the centred layout.
+const STACK_GAP: f32 = 10.0;
+/// Album art smaller than this is left out rather than drawn as a speck.
+const MIN_ART_SIDE: f32 = 24.0;
 const TIME_SIZE: f32 = 12.0;
 const IDLE_MESSAGE: &str = "Play something on Spotify";
 const BAR_HEIGHT: f32 = 4.0;
 /// Extra distance above and below the bar that still counts as a click on it.
 const BAR_SLOP: f32 = 9.0;
-/// Below this height there is no room for the transport row.
-const MIN_HEIGHT_FOR_CONTROLS: f32 = 104.0;
 
 // Segoe Fluent Icons code points.
 const ICON_PREVIOUS: &str = "\u{E892}";
@@ -265,7 +268,16 @@ impl Player {
         position
     }
 
-    /// Art on the left, everything else stacked to its right.
+    /// Title above artist.
+    fn draw_text_block(g: &mut Gfx, x: f32, y: f32, block: &TextBlock, look: &Look) {
+        g.draw_text(&block.title, x, y, look.text, look.shadow);
+        if block.artist_h > 0.0 {
+            g.draw_text(&block.artist, x, y + block.title_h, look.dim, look.shadow);
+        }
+    }
+
+    /// Art on the left; the other parts stacked beside it in the configured
+    /// order, spread over the height of the card.
     fn draw_row(&mut self, g: &mut Gfx, w: f32, h: f32, ctx: &Ctx, look: &Look) -> Result<()> {
         let p = &ctx.cfg.player;
         let media = ctx.media;
@@ -276,140 +288,171 @@ impl Player {
             self.draw_art(g, rect(PAD, PAD, side, side), look)?;
             x += side + GAP;
         }
-        let text_w = (w - x - PAD).max(1.0);
+        let width = (w - x - PAD).max(1.0);
+        let block = TextBlock::new(g, ctx, width, h, Align::Left)?;
 
-        if !media.present {
-            let mut idle = style(ctx, p.artist_size, 400, Align::Left);
-            idle.wrap = true;
-            let layout = g.layout(IDLE_MESSAGE, &idle, text_w, h)?;
-            let height = Gfx::measure(&layout).1;
-            g.draw_text(&layout, x, (h - height) / 2.0, look.dim, look.shadow);
-            return Ok(());
+        // Each part beside the art, with the height it needs.
+        let available = h - 2.0 * PAD;
+        let mut parts: Vec<(PlayerPart, f32)> = p
+            .order
+            .iter()
+            .filter_map(|&part| match part {
+                PlayerPart::Text => Some((part, block.height())),
+                PlayerPart::Controls if p.show_controls && media.present => Some((part, BUTTON)),
+                PlayerPart::Progress if p.show_progress && media.present => {
+                    Some((part, TIME_SIZE + 6.0 + BAR_HEIGHT))
+                }
+                _ => None,
+            })
+            .collect();
+        let total =
+            |parts: &[(PlayerPart, f32)]| parts.iter().map(|(_, height)| height).sum::<f32>();
+        if total(&parts) > available {
+            // A short card has no room for everything; the buttons go first.
+            parts.retain(|(part, _)| *part != PlayerPart::Controls);
         }
+        let spare = (available - total(&parts)).max(0.0);
+        let (mut y, gap) = match parts.len() {
+            0 | 1 => (PAD + spare / 2.0, 0.0),
+            count => (PAD, spare / (count - 1) as f32),
+        };
 
-        let title = g.layout(
-            &media.title,
-            &style(ctx, p.title_size, 600, Align::Left),
-            text_w,
-            h,
-        )?;
-        let title_h = Gfx::measure(&title).1;
-        g.draw_text(&title, x, PAD - 3.0, look.text, look.shadow);
-        let artist = g.layout(
-            &media.artist,
-            &style(ctx, p.artist_size, 400, Align::Left),
-            text_w,
-            h,
-        )?;
-        g.draw_text(&artist, x, PAD - 3.0 + title_h, look.dim, look.shadow);
-
-        let mut bottom = h - PAD;
-        if p.show_progress {
-            let position = self.draw_bar(g, x, bottom - BAR_HEIGHT, text_w, ctx, look);
-            bottom -= BAR_HEIGHT + 6.0;
-            let label = format!(
-                "{} / {}",
-                clock_text(position),
-                clock_text(media.duration_ms)
-            );
-            let time = g.layout(&label, &style(ctx, TIME_SIZE, 400, Align::Right), text_w, h)?;
-            let time_h = Gfx::measure(&time).1;
-            g.draw_text(
-                &time,
-                x,
-                bottom - (BUTTON + time_h) / 2.0,
-                look.dim,
-                look.shadow,
-            );
-        }
-        if p.show_controls && h >= MIN_HEIGHT_FOR_CONTROLS {
-            self.draw_controls(g, x - 6.0, bottom - BUTTON, ctx, look)?;
+        for (part, height) in parts {
+            match part {
+                PlayerPart::Text => Self::draw_text_block(g, x, y, &block, look),
+                PlayerPart::Controls => self.draw_controls(g, x - 6.0, y, ctx, look)?,
+                PlayerPart::Progress => {
+                    let position = self.draw_bar(g, x, y + height - BAR_HEIGHT, width, ctx, look);
+                    let label = format!(
+                        "{} / {}",
+                        clock_text(position),
+                        clock_text(media.duration_ms)
+                    );
+                    let time =
+                        g.layout(&label, &style(ctx, TIME_SIZE, 400, Align::Right), width, h)?;
+                    g.draw_text(&time, x, y - 2.0, look.dim, look.shadow);
+                }
+                PlayerPart::Art => {}
+            }
+            y += height + gap;
         }
         Ok(())
     }
 
-    /// Everything on the centre line: art, title, artist, buttons, progress.
+    /// Everything on the centre line, top to bottom in the configured order.
+    /// The art takes whatever height the other parts leave.
     fn draw_centered(&mut self, g: &mut Gfx, w: f32, h: f32, ctx: &Ctx, look: &Look) -> Result<()> {
         let p = &ctx.cfg.player;
         let media = ctx.media;
         let inner = (w - 2.0 * PAD).max(1.0);
+        let block = TextBlock::new(g, ctx, inner, h, Align::Center)?;
 
-        let (title_text, artist_text) = if media.present {
-            (media.title.as_str(), media.artist.as_str())
-        } else {
-            (IDLE_MESSAGE, "")
-        };
-        let title = g.layout(
-            title_text,
-            &style(ctx, p.title_size, 600, Align::Center),
-            inner,
-            h,
-        )?;
-        let artist = g.layout(
-            artist_text,
-            &style(ctx, p.artist_size, 400, Align::Center),
-            inner,
-            h,
-        )?;
-        let title_h = Gfx::measure(&title).1;
-        let artist_h = if artist_text.is_empty() {
-            0.0
-        } else {
-            Gfx::measure(&artist).1
-        };
-
-        // Heights of the rows under the art; the art takes what is left.
-        let controls_h = if p.show_controls && media.present {
-            BUTTON + 8.0
-        } else {
-            0.0
-        };
-        let progress_h = if p.show_progress && media.present {
-            BAR_HEIGHT + TIME_SIZE + 14.0
-        } else {
-            0.0
-        };
-        let below = title_h + artist_h + 6.0 + controls_h + progress_h;
-        let side = if p.show_art {
-            inner.min(h - 2.0 * PAD - below - GAP).max(0.0)
-        } else {
-            0.0
-        };
-        let art_h = if side > 0.0 { side + GAP } else { 0.0 };
-
-        let mut y = ((h - art_h - below) / 2.0).max(PAD);
-        if side > 0.0 {
-            self.draw_art(g, rect((w - side) / 2.0, y, side, side), look)?;
-            y += art_h;
-        }
-        g.draw_text(&title, PAD, y, look.text, look.shadow);
-        y += title_h;
-        if artist_h > 0.0 {
-            g.draw_text(&artist, PAD, y, look.dim, look.shadow);
-            y += artist_h;
-        }
-        y += 6.0;
-        if controls_h > 0.0 {
-            let row = 3.0 * BUTTON + 2.0 * BUTTON_GAP;
-            self.draw_controls(g, (w - row) / 2.0, y, ctx, look)?;
-            y += controls_h;
-        }
-        if progress_h > 0.0 {
-            let position = self.draw_bar(g, PAD, y + 4.0, inner, ctx, look);
-            let labels = rect(PAD, y + BAR_HEIGHT + 8.0, inner, TIME_SIZE + 4.0);
-            for (text, align) in [
-                (clock_text(position), Align::Left),
-                (clock_text(media.duration_ms), Align::Right),
-            ] {
-                let layout = g.layout(
-                    &text,
-                    &style(ctx, TIME_SIZE, 400, align),
-                    inner,
-                    labels.bottom - labels.top,
-                )?;
-                g.draw_text(&layout, labels.left, labels.top, look.dim, look.shadow);
+        let mut parts: Vec<(PlayerPart, f32)> = p
+            .order
+            .iter()
+            .filter_map(|&part| match part {
+                PlayerPart::Art if p.show_art => Some((part, 0.0)),
+                PlayerPart::Text => Some((part, block.height())),
+                PlayerPart::Controls if p.show_controls && media.present => Some((part, BUTTON)),
+                PlayerPart::Progress if p.show_progress && media.present => {
+                    Some((part, BAR_HEIGHT + 6.0 + TIME_SIZE + 4.0))
+                }
+                _ => None,
+            })
+            .collect();
+        let gaps = STACK_GAP * parts.len().saturating_sub(1) as f32;
+        let fixed: f32 = parts.iter().map(|(_, height)| height).sum();
+        let side = inner.min(h - 2.0 * PAD - fixed - gaps).max(0.0);
+        for (part, height) in &mut parts {
+            if *part == PlayerPart::Art {
+                *height = side;
             }
         }
+        // An art square squeezed to nothing is dropped, with its gap.
+        parts.retain(|(part, height)| *part != PlayerPart::Art || *height >= MIN_ART_SIDE);
+
+        let total: f32 = parts.iter().map(|(_, height)| height).sum::<f32>()
+            + STACK_GAP * parts.len().saturating_sub(1) as f32;
+        let mut y = ((h - total) / 2.0).max(PAD);
+        for (part, height) in parts {
+            match part {
+                PlayerPart::Art => {
+                    self.draw_art(g, rect((w - height) / 2.0, y, height, height), look)?;
+                }
+                PlayerPart::Text => Self::draw_text_block(g, PAD, y, &block, look),
+                PlayerPart::Controls => {
+                    let row = 3.0 * BUTTON + 2.0 * BUTTON_GAP;
+                    self.draw_controls(g, (w - row) / 2.0, y, ctx, look)?;
+                }
+                PlayerPart::Progress => {
+                    let position = self.draw_bar(g, PAD, y, inner, ctx, look);
+                    for (text, align) in [
+                        (clock_text(position), Align::Left),
+                        (clock_text(media.duration_ms), Align::Right),
+                    ] {
+                        let layout = g.layout(
+                            &text,
+                            &style(ctx, TIME_SIZE, 400, align),
+                            inner,
+                            TIME_SIZE + 4.0,
+                        )?;
+                        g.draw_text(&layout, PAD, y + BAR_HEIGHT + 6.0, look.dim, look.shadow);
+                    }
+                }
+            }
+            y += height + STACK_GAP;
+        }
         Ok(())
+    }
+}
+
+/// The title and artist laid out for one width, or the idle message when
+/// nothing is playing.
+struct TextBlock {
+    title: IDWriteTextLayout,
+    artist: IDWriteTextLayout,
+    title_h: f32,
+    /// Zero when there is no artist line to show.
+    artist_h: f32,
+}
+
+impl TextBlock {
+    fn new(g: &mut Gfx, ctx: &Ctx, width: f32, h: f32, align: Align) -> Result<Self> {
+        let p = &ctx.cfg.player;
+        let media = ctx.media;
+        let (title_text, artist_text, title_weight) = if media.present {
+            (media.title.as_str(), media.artist.as_str(), 600)
+        } else {
+            (IDLE_MESSAGE, "", 400)
+        };
+        let title_size = if media.present {
+            p.title_size
+        } else {
+            p.artist_size
+        };
+        let mut title_style = style(ctx, title_size, title_weight, align);
+        // The idle message is a sentence and may need a second line.
+        title_style.wrap = !media.present;
+        let title = g.layout(title_text, &title_style, width, h)?;
+        let artist = g.layout(
+            artist_text,
+            &style(ctx, p.artist_size, 400, align),
+            width,
+            h,
+        )?;
+        Ok(Self {
+            title_h: Gfx::measure(&title).1,
+            artist_h: if artist_text.is_empty() {
+                0.0
+            } else {
+                Gfx::measure(&artist).1
+            },
+            title,
+            artist,
+        })
+    }
+
+    fn height(&self) -> f32 {
+        self.title_h + self.artist_h
     }
 }

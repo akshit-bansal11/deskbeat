@@ -54,6 +54,26 @@ fn rounded(r: D2D_RECT_F, radius: f32) -> D2D1_ROUNDED_RECT {
     }
 }
 
+/// Decoration drawn beneath a piece of text.
+#[derive(Clone, Copy, Default)]
+pub struct TextFx {
+    pub shadow: Option<Rgba>,
+    /// Outline colour and width.
+    pub stroke: Option<(Rgba, f32)>,
+}
+
+/// The eight directions an outline is stamped in.
+const OUTLINE: [(f32, f32); 8] = [
+    (1.0, 0.0),
+    (-1.0, 0.0),
+    (0.0, 1.0),
+    (0.0, -1.0),
+    (0.707, 0.707),
+    (-0.707, 0.707),
+    (0.707, -0.707),
+    (-0.707, -0.707),
+];
+
 pub struct TextStyle<'a> {
     pub font: &'a str,
     pub size: f32,
@@ -659,6 +679,43 @@ impl Gfx {
             .iter()
             .map(|b| rect(b.left, b.top, b.width, b.height))
             .collect()
+    }
+
+    /// Draws text over an optional shadow and outline.
+    ///
+    /// The outline is the text stamped eight times around itself. A true
+    /// outline needs the glyph geometry; for the widths a lyric line wants,
+    /// stamping is indistinguishable and a fraction of the code.
+    pub fn draw_text_fx(&self, layout: &IDWriteTextLayout, x: f32, y: f32, c: Rgba, fx: &TextFx) {
+        let reach = fx.stroke.map_or(0.0, |(_, width)| width);
+        unsafe {
+            if let Some(shadow) = fx.shadow {
+                for (offset, share) in [(1.0, 1.0), (3.0, 0.42)] {
+                    self.rt.DrawTextLayout(
+                        point(x, y + offset + reach),
+                        layout,
+                        self.solid([shadow[0], shadow[1], shadow[2], shadow[3] * share]),
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                    );
+                }
+            }
+            if let Some((color, width)) = fx.stroke {
+                for (dx, dy) in OUTLINE {
+                    self.rt.DrawTextLayout(
+                        point(x + dx * width, y + dy * width),
+                        layout,
+                        self.solid(color),
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                    );
+                }
+            }
+            self.rt.DrawTextLayout(
+                point(x, y),
+                layout,
+                self.solid(c),
+                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+            );
+        }
     }
 
     pub fn draw_text(&self, layout: &IDWriteTextLayout, x: f32, y: f32, c: Rgba, shadow: bool) {

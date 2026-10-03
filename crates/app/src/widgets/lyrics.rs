@@ -9,14 +9,11 @@ use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 use windows::core::Result;
 
 use super::{Ctx, Tick, Wake, Widget, draw_card};
-use crate::gfx::{Gfx, TextStyle};
+use crate::gfx::{Gfx, TextFx, TextStyle};
 use crate::lyrics::Lyrics;
 
 /// A jump of more lines than this is a seek: snap instead of scrolling past them all.
 const SNAP_BEYOND_LINES: f32 = 3.5;
-/// How bright the rest of the current line is in word mode, between the
-/// inactive and the active colour.
-const WORD_MODE_LINE_LEVEL: f32 = 0.42;
 /// While the clock is absorbing a correction, re-check at least this often.
 const SETTLING_RECHECK_MS: f64 = 50.0;
 
@@ -154,18 +151,41 @@ impl LyricsView {
         let pad = if cfg.card { 22.0 } else { 6.0 };
         let layout = g.layout(message, &style, w - 2.0 * pad, h)?;
         let height = Gfx::measure(&layout).1;
-        let color = with_alpha(ctx.text, cfg.inactive_opacity * cfg.opacity);
-        let shadow = ctx.cfg.theme.text_shadow && !cfg.card;
-        g.draw_text(&layout, pad, (h - height) / 2.0, color, shadow);
+        let color = with_alpha(
+            named_color(&cfg.inactive_color, ctx),
+            cfg.inactive_opacity * cfg.opacity,
+        );
+        g.draw_text_fx(
+            &layout,
+            pad,
+            (h - height) / 2.0,
+            color,
+            &decoration(ctx, 1.0),
+        );
         Ok(())
     }
 }
 
-fn active_color(name: &str, ctx: &Ctx) -> Rgba {
+/// A lyric colour setting: the theme's text or accent colour by name, or a hex colour.
+fn named_color(name: &str, ctx: &Ctx) -> Rgba {
     match name {
         "accent" => ctx.accent,
         "text" | "" => ctx.text,
         hex => parse_hex(hex).unwrap_or(ctx.text),
+    }
+}
+
+/// The shadow and outline for a line drawn at `fade` of its full strength.
+fn decoration(ctx: &Ctx, fade: f32) -> TextFx {
+    let cfg = &ctx.cfg.lyrics;
+    let strength = cfg.opacity * fade;
+    let color =
+        |hex: &str, alpha: f32| with_alpha(parse_hex(hex).unwrap_or([0.0, 0.0, 0.0, 1.0]), alpha);
+    TextFx {
+        shadow: (cfg.shadow_opacity > 0.0)
+            .then(|| color(&cfg.shadow_color, cfg.shadow_opacity * strength)),
+        stroke: (cfg.stroke_width > 0.0)
+            .then(|| (color(&cfg.stroke_color, strength), cfg.stroke_width)),
     }
 }
 
@@ -300,9 +320,12 @@ impl Widget for LyricsView {
         let scroll = self.centres[below] + (self.centres[above] - self.centres[below]) * p.fract();
 
         let (before, after) = (cfg.lines_before as f32, cfg.lines_after as f32);
-        let inactive = with_alpha(ctx.text, cfg.inactive_opacity * o);
-        let active = with_alpha(active_color(&cfg.active_color, ctx), o);
-        let shadow = ctx.cfg.theme.text_shadow && !cfg.card;
+        let inactive = with_alpha(
+            named_color(&cfg.inactive_color, ctx),
+            cfg.inactive_opacity * o,
+        );
+        let active = with_alpha(named_color(&cfg.active_color, ctx), o);
+        let word_color = with_alpha(named_color(&cfg.word_color, ctx), o);
         let first = (p - before - 1.0).max(0.0) as usize;
         let end = ((p + after + 2.0) as usize).min(last);
 
@@ -330,17 +353,12 @@ impl Widget for LyricsView {
                 0.0
             };
             let by_word = current && cfg.mode == LyricsMode::Word && synced.is_some();
-            let level = if by_word {
-                glow * WORD_MODE_LINE_LEVEL
-            } else {
-                glow
-            };
-            g.draw_text(
+            g.draw_text_fx(
                 layout,
                 pad,
                 y,
-                with_alpha(mix(inactive, active, level), fade),
-                shadow,
+                with_alpha(mix(inactive, active, glow), fade),
+                &decoration(ctx, fade),
             );
 
             if by_word
@@ -349,7 +367,7 @@ impl Widget for LyricsView {
             {
                 let (start, len) = word_range(&lines[i], word);
                 for clip in Gfx::range_rects(layout, start, len) {
-                    g.draw_text_clipped(layout, pad, y, with_alpha(active, fade), clip);
+                    g.draw_text_clipped(layout, pad, y, with_alpha(word_color, fade), clip);
                 }
             }
         }

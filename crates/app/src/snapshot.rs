@@ -155,6 +155,11 @@ pub fn run(dir: &Path) -> Result<()> {
     variant.visualizer.symmetric = true;
     variant.visualizer.card = true;
     variant.visualizer.flip_x = true;
+    variant.clock.order.reverse();
+    variant.player.order.swap(0, 1);
+    variant.lyrics.inactive_color = "accent".to_owned();
+    variant.lyrics.word_color = "#F9F871".to_owned();
+    variant.lyrics.stroke_width = 2.0;
     variant.player.layout = PlayerLayout::Centered;
     (variant.player.frame.w, variant.player.frame.h) = (260, 400);
     variant.clock.time_format = "%l:%M %p".to_owned();
