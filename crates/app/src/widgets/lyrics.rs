@@ -2,7 +2,7 @@
 //! above and below, scrolling as the song moves on.
 
 use sonic_veil_core::clock::{Anchor, Clock, find_line_index, find_word_index};
-use sonic_veil_core::color::{Rgba, mix, parse_hex, with_alpha};
+use sonic_veil_core::color::{mix, parse_hex, with_alpha};
 use sonic_veil_core::config::LyricsMode;
 use sonic_veil_core::timing::Line;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;

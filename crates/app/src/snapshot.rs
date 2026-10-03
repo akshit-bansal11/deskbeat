@@ -173,7 +173,7 @@ pub fn run(dir: &Path) -> Result<()> {
     hanging.visualizer.flip_y = true;
     hanging.visualizer.frame.anchor = sonic_veil_core::config::Anchor::Top;
     hanging.clock.frame.y = 200;
-    looks.push(("flipped".to_owned(), hanging, false));
+    looks.push(("flipped".to_owned(), hanging));
 
     for (name, cfg) in &looks {
         let path = dir.join(format!("{name}.png"));

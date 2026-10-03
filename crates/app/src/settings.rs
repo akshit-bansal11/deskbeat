@@ -107,8 +107,6 @@ const ALIGNS: [(Align, &str); 3] = [
     (Align::Right, "Right"),
 ];
 
-/// What the user did in the panel that the app has to act on.
-#[derive(Default)]
 /// What the panel needs to know about the app to draw itself.
 #[derive(Clone, Copy)]
 pub struct Status {
@@ -117,6 +115,8 @@ pub struct Status {
     pub autostart: bool,
 }
 
+/// What the user did in the panel that the app has to act on.
+#[derive(Default)]
 pub struct Outcome {
     /// A setting changed and `cfg` holds the new value.
     pub changed: bool,
