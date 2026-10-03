@@ -25,12 +25,12 @@ It needs Windows 11 and the Spotify desktop app playing on the same PC. Playback
 
 ## Use
 
-Sonic Veil lives in the notification area. Right-click its icon for the menu, or left-click it for settings.
+Sonic Veil lives in the notification area. Double-click its icon for settings. There is no menu: everything, including quitting and starting with Windows, is in the settings panel.
 
 | Hotkey | Does |
 | --- | --- |
 | `Ctrl+Alt+S` | Open settings |
-| `Ctrl+Alt+E` | Edit layout: drag a widget to move it, an edge to resize it, or one element inside the clock or player to move just that |
+| `Ctrl+Alt+E` | Edit layout: drag any element of the clock or player on its own, or drag the lyrics or visualizer to move them |
 | `Ctrl+Alt+H` | Hide or show every widget |
 | `Ctrl+Alt+Up` / `Down` | Show lyrics 100 ms earlier / later |
 
@@ -40,7 +40,9 @@ Hotkeys can be turned off in settings.
 
 The settings panel covers the common choices: four one-click looks, fonts, colours, sizes, which widgets show, where they sit, and how the visualizer moves.
 
-In edit layout, the clock and the player come apart: the day, time and date, and the player's art, title, artist, each button, the progress bar and both times are outlined, and each can be dragged to its own place inside the widget. Dragging the empty space between them moves the whole widget. The Player tab has two ready-made arrangements to start from.
+The clock and the player have no box. In edit layout the day, time and date, and the player's art, title, artist, each button, the progress bar and both times can each be dragged anywhere; the one under the pointer is outlined. Nothing else is drawn in edit layout: no frames and no labels. Dragging the space between a widget's elements moves them all together. The Player tab has two ready-made arrangements to start from.
+
+Every piece of text has its own font, size, weight, colour, opacity, letter spacing and capitals setting. The progress bar has a length, thickness and colour, the buttons a size and colour, and the album art a size and corner rounding.
 
 Everything is stored in one file, which you can also edit by hand. It reloads when you save:
 

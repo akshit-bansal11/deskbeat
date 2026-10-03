@@ -8,6 +8,12 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Every text of the clock and the player has its own font, size, weight,
+  colour, opacity, letter spacing and capitals setting. The lyrics take
+  their own font.
+- The progress bar has a thickness, colour and track opacity; the buttons a
+  size and colour; the album art a corner rounding.
+- "Hide all widgets", "Start with Windows" and "Quit" in the settings panel.
 - The visualizer can span the whole width of the screen, which is now the
   default, with up to 512 bars.
 - The visualizer can be flipped left to right and upside down.
@@ -30,6 +36,14 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- The tray icon's right-click menu. A double-click opens the settings
+  panel, which now holds everything the menu did.
+- Frames and labels in edit mode. Only the element under the pointer is
+  outlined.
+- `clock.day_font`, `day_size`, `time_font`, `time_size`, `text_size` and
+  `time_weight`, and `player.title_size` and `artist_size`, replaced by keys
+  of each element such as `clock.day.size`. Files that use the old keys
+  load and keep their values.
 - `clock.align` from the config. A file that still has it loads, and the
   key is ignored.
 
