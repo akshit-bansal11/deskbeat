@@ -151,15 +151,6 @@ impl Kind {
         }
     }
 
-    pub fn enabled_mut(self, cfg: &mut Config) -> &mut bool {
-        match self {
-            Kind::Clock => &mut cfg.clock.enabled,
-            Kind::Player => &mut cfg.player.enabled,
-            Kind::Lyrics => &mut cfg.lyrics.enabled,
-            Kind::Visualizer => &mut cfg.visualizer.enabled,
-        }
-    }
-
     pub fn enabled(self, cfg: &Config) -> bool {
         match self {
             Kind::Clock => cfg.clock.enabled,
