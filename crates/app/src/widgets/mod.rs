@@ -229,6 +229,8 @@ pub struct Placed {
     pub rect: D2D_RECT_F,
 }
 
+/// Share of a line box, above and below, that holds no ink.
+const LINE_BOX_TRIM: f32 = 0.15;
 /// The narrowest a line is ever squeezed to before it is cut with an ellipsis.
 const MIN_TEXT_WIDTH: f32 = 60.0;
 
@@ -271,7 +273,14 @@ pub fn place_text(
     Ok(Placed {
         layout,
         x: spot.x - box_back,
-        rect: rect(spot.x - text_back, spot.y, text_w, text_h),
+        // A line box is taller than its letters, most of all at large sizes.
+        // Trimmed, so the grab box of one row does not cover its neighbours.
+        rect: rect(
+            spot.x - text_back,
+            spot.y + text_h * LINE_BOX_TRIM,
+            text_w,
+            text_h * (1.0 - 2.0 * LINE_BOX_TRIM),
+        ),
     })
 }
 

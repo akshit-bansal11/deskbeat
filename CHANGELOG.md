@@ -11,16 +11,24 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 - The visualizer can span the whole width of the screen, which is now the
   default, with up to 512 bars.
 - The visualizer can be flipped left to right and upside down.
-- A centred player layout: album art, title, artist, buttons and progress
-  stacked on the centre line.
-- The clock's day, time and date can each be hidden, and their order chosen.
-- The order of the player's art, text, buttons and progress can be chosen.
+- Every element of the clock and the player has its own position: the day,
+  time and date, and the player's art, title, artist, three buttons,
+  progress bar, elapsed time and total time. In edit mode each is dragged
+  separately; empty space still moves the whole widget.
+- The clock's day, time and date can each be hidden.
+- "Art on the left" and "Centred stack" arrange the player in one click, as
+  a starting point. Album art size and progress bar length are settings.
 - Lyrics: separate colours for the current line, the current word and the
   other lines; an outline with its own colour and width; a shadow with its
   own colour and strength.
 - Separate fonts for the clock's day row and its time and date rows.
 - Fonts placed in `%APPDATA%\sonic-veil\fonts` can be used without
   installing them in Windows.
+
+### Removed
+
+- `clock.align` from the config. A file that still has it loads, and the
+  key is ignored.
 
 ### Changed
 
