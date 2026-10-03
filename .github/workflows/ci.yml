@@ -36,11 +36,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.9.2
       - run: cargo build --release --locked
+      # The runner has no GPU, no Spotify and no audio device. The snapshot
+      # mode needs none of them and still exercises every widget's drawing.
+      - name: Render snapshots
+        shell: pwsh
+        run: |
+          $run = Start-Process -FilePath target/release/sonic-veil.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
+          if ($run.ExitCode -ne 0) {
+            Get-Content "$env:LOCALAPPDATA/sonic-veil/sonic-veil.log" -ErrorAction SilentlyContinue
+            throw "snapshot exited with $($run.ExitCode)"
+          }
+          Get-ChildItem snapshots
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: sonic-veil-windows-x64
           retention-days: 14
-          if-no-files-found: ignore
+          if-no-files-found: error
           path: |
             target/release/sonic-veil.exe
             snapshots/*.png

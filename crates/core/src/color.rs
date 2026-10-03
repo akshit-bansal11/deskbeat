@@ -114,6 +114,54 @@ pub fn accent_from_bgra(pixels: &[u8], fallback: Rgba) -> Rgba {
     [r, g, b, 1.0]
 }
 
+/// Box-averages a BGRA image down to `side` by `side` pixels and softens the
+/// result. Stretched back up with linear filtering it reads as a heavy blur of
+/// the original, at none of the cost of a real one.
+pub fn downsample_bgra(pixels: &[u8], w: u32, h: u32, side: u32) -> Vec<u8> {
+    let (w, h, side) = (w as usize, h as usize, side as usize);
+    if w == 0 || h == 0 || side == 0 || pixels.len() < w * h * 4 {
+        return vec![0; side * side * 4];
+    }
+
+    let mut cells = vec![[0.0f32; 4]; side * side];
+    for (index, cell) in cells.iter_mut().enumerate() {
+        let (cx, cy) = (index % side, index / side);
+        // A cell always covers at least one source pixel, even when upscaling.
+        let (x0, y0) = (cx * w / side, cy * h / side);
+        let x1 = ((cx + 1) * w / side).clamp(x0 + 1, w);
+        let y1 = ((cy + 1) * h / side).clamp(y0 + 1, h);
+        for y in y0..y1 {
+            for px in pixels[(y * w + x0) * 4..(y * w + x1) * 4]
+                .as_chunks::<4>()
+                .0
+            {
+                for (sum, &channel) in cell.iter_mut().zip(px) {
+                    *sum += f32::from(channel);
+                }
+            }
+        }
+        let count = ((x1 - x0) * (y1 - y0)) as f32;
+        *cell = cell.map(|sum| sum / count);
+    }
+
+    // One 3x3 box pass, clamped at the edges, hides the cell boundaries.
+    let last = side as isize - 1;
+    let at =
+        |x: isize, y: isize| cells[(y.clamp(0, last) * side as isize + x.clamp(0, last)) as usize];
+    let mut out = Vec::with_capacity(side * side * 4);
+    for index in 0..(side * side) as isize {
+        let (x, y) = (index % side as isize, index / side as isize);
+        for channel in 0..4 {
+            let sum: f32 = (-1..=1)
+                .flat_map(|dy| (-1..=1).map(move |dx| (dx, dy)))
+                .map(|(dx, dy)| at(x + dx, y + dy)[channel])
+                .sum();
+            out.push((sum / 9.0).round() as u8);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +223,48 @@ mod tests {
             WHITE
         );
         assert_eq!(accent_from_bgra(&[], WHITE), WHITE);
+    }
+    #[test]
+    fn downsampling_keeps_a_flat_image_flat() {
+        let small = downsample_bgra(&image([10, 20, 30, 255], 64 * 64), 64, 64, 8);
+        assert_eq!(small.len(), 8 * 8 * 4);
+        assert!(
+            small
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|px| *px == [10, 20, 30, 255])
+        );
+    }
+
+    #[test]
+    fn downsampling_keeps_left_and_right_apart() {
+        // Left half blue, right half red, 32 pixels wide and 2 tall.
+        let row: Vec<u8> = (0..32)
+            .flat_map(|x| {
+                if x < 16 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 0, 255, 255]
+                }
+            })
+            .collect();
+        let small = downsample_bgra(&row.repeat(2), 32, 2, 8);
+        assert!(small[0] > 200 && small[2] < 50, "left edge should be blue");
+        assert!(
+            small[7 * 4] < 50 && small[7 * 4 + 2] > 200,
+            "right edge should be red"
+        );
+    }
+
+    #[test]
+    fn downsampling_survives_bad_input() {
+        assert_eq!(downsample_bgra(&[], 0, 0, 4), vec![0; 64]);
+        assert_eq!(downsample_bgra(&[1, 2, 3], 10, 10, 2), vec![0; 16]);
+        // Upscaling a single pixel repeats it.
+        assert_eq!(
+            downsample_bgra(&[9, 8, 7, 255], 1, 1, 2),
+            [9, 8, 7, 255].repeat(4)
+        );
     }
 }

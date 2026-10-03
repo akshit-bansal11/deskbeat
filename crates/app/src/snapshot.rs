@@ -1,0 +1,254 @@
+//! Renders every widget into PNG files from made-up data: no window, GPU,
+//! Spotify or audio device needed. CI uploads the result, so a change to the
+//! design can be looked at without running the app.
+
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+
+use sonic_veil_core::color::{accent_from_bgra, downsample_bgra};
+use sonic_veil_core::config::{Config, LyricsMode, Preset, VisualizerStyle};
+use sonic_veil_core::lrc::parse_lrc;
+use sonic_veil_core::timefmt::LocalTime;
+use sonic_veil_core::timing::normalize_lines;
+use windows::Win32::Foundation::{E_FAIL, GENERIC_WRITE};
+use windows::Win32::Graphics::Imaging::*;
+use windows::Win32::System::Com::{
+    CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
+};
+use windows::core::{Error, HSTRING, Result};
+
+use crate::app::Palette;
+use crate::capture::Audio;
+use crate::gfx::{Gfx, rect};
+use crate::lyrics::Lyrics;
+use crate::media::{Art, BLUR_SIDE, MediaState};
+use crate::widgets::{Ctx, Kind};
+
+const WIDTH: u32 = 1600;
+const HEIGHT: u32 = 900;
+const ART_SIDE: u32 = 160;
+/// Where the pretend track is, chosen to land on a lyric line.
+const POSITION_MS: f64 = 61_500.0;
+/// Ticks run before drawing, so bars have risen and scrolling has settled.
+const WARM_UP_TICKS: u32 = 40;
+
+const LYRICS: &str = "\
+[00:44.00] We left the porch light burning
+[00:49.50] for anyone still on the road
+[00:55.00] The radio kept turning
+[01:00.00] every mile into a song we know
+[01:06.00] So roll the windows down
+[01:11.00] and let the night come in
+[01:16.00] We are not lost, we are not found
+[01:22.00] we are somewhere in between";
+
+/// A teal-to-magenta gradient with a pale disc: enough colour for the
+/// accent and the blurred background to have something to work with.
+fn fake_art() -> Art {
+    let side = ART_SIDE as usize;
+    let mut bgra = Vec::with_capacity(side * side * 4);
+    for i in 0..side * side {
+        let (x, y) = (
+            (i % side) as f32 / side as f32,
+            (i / side) as f32 / side as f32,
+        );
+        let t = (x + y) / 2.0;
+        let disc = if (x - 0.68).hypot(y - 0.34) < 0.2 {
+            0.8
+        } else {
+            0.0
+        };
+        let channel = |from: f32, to: f32| {
+            let base = from + (to - from) * t;
+            (base + (235.0 - base) * disc) as u8
+        };
+        bgra.extend([
+            channel(170.0, 120.0),
+            channel(150.0, 40.0),
+            channel(20.0, 210.0),
+            255,
+        ]);
+    }
+    Art {
+        accent: Some(accent_from_bgra(&bgra, [1.0; 4])),
+        blur: downsample_bgra(&bgra, ART_SIDE, ART_SIDE, BLUR_SIDE),
+        w: ART_SIDE,
+        h: ART_SIDE,
+        bgra,
+    }
+}
+
+/// A chord with a falling spectrum, so the bars look like music rather than a test tone.
+fn fake_audio() -> Audio {
+    let audio = Audio::offline();
+    let tones = [
+        (55.0, 0.30),
+        (110.0, 0.24),
+        (220.0, 0.15),
+        (440.0, 0.11),
+        (660.0, 0.06),
+        (990.0, 0.05),
+        (1760.0, 0.035),
+        (3520.0, 0.02),
+        (5200.0, 0.012),
+        (9000.0, 0.006),
+    ];
+    let samples: Vec<f32> = (0..4096)
+        .map(|n| {
+            let t = n as f32 / 48_000.0;
+            tones
+                .iter()
+                .map(|(hz, amplitude)| amplitude * (std::f32::consts::TAU * hz * t).sin())
+                .sum()
+        })
+        .collect();
+    audio.push(&samples, 48_000);
+    audio.active.store(true, Ordering::SeqCst);
+    audio
+}
+
+fn fake_media() -> MediaState {
+    MediaState {
+        present: true,
+        playing: true,
+        title: "Somewhere in Between".to_owned(),
+        artist: "The Night Drivers".to_owned(),
+        album: "Porch Lights".to_owned(),
+        duration_ms: 214_000.0,
+        position_ms: POSITION_MS,
+        position_at_ms: 0.0,
+        art: Some(Arc::new(fake_art())),
+        track_gen: 1,
+        art_gen: 1,
+        update_gen: 1,
+    }
+}
+
+pub fn run(dir: &Path) -> Result<()> {
+    unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).ok()? };
+    std::fs::create_dir_all(dir).map_err(|_| Error::from(E_FAIL))?;
+    let wic: IWICImagingFactory =
+        unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)? };
+
+    let media = fake_media();
+    let audio = fake_audio();
+    let lyrics = Lyrics::Synced(normalize_lines(
+        &parse_lrc(LYRICS).lines,
+        media.duration_ms as i64,
+    ));
+
+    let mut looks = vec![("default".to_owned(), Config::default())];
+    for preset in Preset::ALL {
+        let mut cfg = Config::default();
+        cfg.apply_preset(preset);
+        looks.push((preset.name().to_lowercase(), cfg));
+    }
+    // One more to cover the options no preset turns on.
+    let mut variant = Config::default();
+    variant.lyrics.mode = LyricsMode::Word;
+    variant.visualizer.style = VisualizerStyle::Wave;
+    variant.visualizer.symmetric = true;
+    variant.visualizer.card = true;
+    variant.clock.time_format = "%l:%M %p".to_owned();
+    looks.push(("word-wave".to_owned(), variant));
+
+    for (name, cfg) in &looks {
+        let path = dir.join(format!("{name}.png"));
+        render(&wic, &path, cfg, &media, &lyrics, &audio)?;
+        println!("wrote {}", path.display());
+    }
+    Ok(())
+}
+
+fn render(
+    wic: &IWICImagingFactory,
+    path: &Path,
+    cfg: &Config,
+    media: &MediaState,
+    lyrics: &Lyrics,
+    audio: &Audio,
+) -> Result<()> {
+    let bitmap = unsafe {
+        wic.CreateBitmap(
+            WIDTH,
+            HEIGHT,
+            &GUID_WICPixelFormat32bppPBGRA,
+            WICBitmapCacheOnLoad,
+        )?
+    };
+    let mut gfx = Gfx::for_bitmap(&bitmap)?;
+    let palette = Palette::new(cfg);
+    let ctx_at = |now_ms: f64| Ctx {
+        cfg,
+        media,
+        lyrics,
+        lyrics_gen: 1,
+        audio,
+        now_ms,
+        time: LocalTime {
+            year: 2026,
+            month: 10,
+            day: 3,
+            weekday: 6,
+            hour: 21,
+            minute: 47,
+            second: 12,
+        },
+        ms_to_next_second: 500,
+        text: palette.text,
+        card: palette.card,
+        accent: palette.accent(media),
+    };
+
+    gfx.begin_draw();
+    // Widgets are translucent, so they need a wallpaper behind them to judge.
+    let wallpaper = gfx.vertical_gradient(
+        0.0,
+        HEIGHT as f32,
+        [0.09, 0.11, 0.24, 1.0],
+        [0.44, 0.21, 0.36, 1.0],
+    )?;
+    gfx.fill_round_with(rect(0.0, 0.0, WIDTH as f32, HEIGHT as f32), 0.0, &wallpaper);
+
+    let mut drawn = Ok(());
+    for kind in Kind::ALL {
+        if !kind.enabled(cfg) {
+            continue;
+        }
+        let frame = kind.frame(cfg);
+        let (x, y) = frame.origin(WIDTH as i32, HEIGHT as i32);
+        let mut widget = kind.create();
+        for step in 0..WARM_UP_TICKS {
+            widget.tick(&ctx_at(f64::from(step) * 16.7));
+        }
+        gfx.set_transform(1.0, x as f32, y as f32);
+        let ctx = ctx_at(f64::from(WARM_UP_TICKS) * 16.7);
+        drawn = drawn.and(widget.draw(&mut gfx, frame.w as f32, frame.h as f32, &ctx));
+    }
+    gfx.end_draw()?;
+    drawn?;
+    drop(gfx);
+
+    save_png(wic, &bitmap, path)
+}
+
+fn save_png(wic: &IWICImagingFactory, bitmap: &IWICBitmap, path: &Path) -> Result<()> {
+    unsafe {
+        let stream = wic.CreateStream()?;
+        stream.InitializeFromFilename(&HSTRING::from(path.as_os_str()), GENERIC_WRITE.0)?;
+        let encoder = wic.CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null())?;
+        encoder.Initialize(&stream, WICBitmapEncoderNoCache)?;
+
+        let mut frame = None;
+        encoder.CreateNewFrame(&mut frame, std::ptr::null_mut())?;
+        let frame = frame.ok_or_else(|| Error::from(E_FAIL))?;
+        frame.Initialize(None)?;
+        frame.SetSize(WIDTH, HEIGHT)?;
+        let mut format = GUID_WICPixelFormat32bppBGRA;
+        frame.SetPixelFormat(&mut format)?;
+        frame.WriteSource(bitmap, std::ptr::null())?;
+        frame.Commit()?;
+        encoder.Commit()
+    }
+}
