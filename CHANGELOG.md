@@ -14,7 +14,7 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 - A centred player layout: album art, title, artist, buttons and progress
   stacked on the centre line.
 - Separate fonts for the clock's day row and its time and date rows.
-- Fonts placed in `%APPDATA%sonic-veilonts` can be used without
+- Fonts placed in `%APPDATA%\sonic-veil\fonts` can be used without
   installing them in Windows.
 
 ### Changed
