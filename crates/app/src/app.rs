@@ -156,6 +156,8 @@ struct App {
     /// written once the changes stop.
     save_at: Option<f64>,
     hotkeys_on: bool,
+    /// Whether the lyrics on screen were fetched with word timing asked for.
+    word_sync_on: bool,
     palette: Palette,
     settings: Option<Panel>,
 
@@ -280,6 +282,7 @@ pub fn run() -> Result<()> {
         reload_at: None,
         save_at: None,
         hotkeys_on: false,
+        word_sync_on: false,
         settings: None,
         media: MediaState::default(),
         media_tx: media::spawn(media_shared.clone(), notify),
@@ -709,6 +712,7 @@ impl App {
             Lyrics::None
         };
         self.lyrics_gen += 1;
+        self.word_sync_on = self.cfg.lyrics.word_sync;
         if let Ok(mut shared) = self.lyrics_shared.lock() {
             shared.track_gen = self.media.track_gen;
             shared.lyrics = Lyrics::None;
@@ -725,6 +729,8 @@ impl App {
                 self.media.track_gen,
                 self.lyrics_shared.clone(),
                 self.notify,
+                self.word_sync_on
+                    .then(|| self.cfg.lyrics.word_servers.clone()),
             );
         }
     }
@@ -1079,8 +1085,11 @@ impl App {
             panel.dirty = true;
         }
 
-        if self.cfg.lyrics.enabled == matches!(self.lyrics, Lyrics::None) {
-            // Lyrics were just switched on with a track playing, or off.
+        if self.cfg.lyrics.enabled == matches!(self.lyrics, Lyrics::None)
+            || self.cfg.lyrics.word_sync != self.word_sync_on
+        {
+            // Lyrics were just switched on with a track playing, or off, or
+            // are now wanted from a different source.
             self.fetch_lyrics();
         }
         for host in &mut self.hosts {

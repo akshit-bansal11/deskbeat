@@ -15,6 +15,9 @@ pub struct Word {
     pub end_ms: i64,
     /// True when the timing was synthesized rather than sourced.
     pub synthesized: bool,
+    /// True for a syllable that runs straight into the next one, with no
+    /// space between them. Only sourced timing splits words this finely.
+    pub joined: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,8 +25,21 @@ pub struct Line {
     pub start_ms: i64,
     pub end_ms: i64,
     pub words: Vec<Word>,
-    /// Words joined with single spaces.
+    /// The words as displayed: see `join_words`.
     pub text: String,
+}
+
+/// The text of a line: a space after every word, except between the
+/// syllables of one word.
+pub fn join_words(words: &[Word]) -> String {
+    let mut text = String::new();
+    for (i, word) in words.iter().enumerate() {
+        text += &word.text;
+        if !word.joined && i + 1 < words.len() {
+            text.push(' ');
+        }
+    }
+    text
 }
 
 /// Distribute a line's duration across its words by character weight.
@@ -71,6 +87,7 @@ pub fn synthesize_word_timings(text: &str, line_start_ms: i64, line_end_ms: i64)
                 start_ms,
                 end_ms,
                 synthesized: true,
+                joined: false,
             }
         })
         .collect()
@@ -99,6 +116,7 @@ fn bound_sourced_words(
                 start_ms,
                 end_ms: raw_end.max(start_ms + MIN_WORD_MS),
                 synthesized: false,
+                joined: false,
             }
         })
         .collect()
@@ -134,11 +152,7 @@ pub fn normalize_lines(raw: &[RawLine], track_duration_ms: i64) -> Vec<Line> {
         lines.push(Line {
             start_ms: first.start_ms,
             end_ms: last.end_ms,
-            text: words
-                .iter()
-                .map(|w| w.text.as_str())
-                .collect::<Vec<_>>()
-                .join(" "),
+            text: join_words(&words),
             words,
         });
     }

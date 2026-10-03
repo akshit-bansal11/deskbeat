@@ -9,7 +9,8 @@
 //!   Spotify's audio, for eight seconds. `--probe <name.exe>` listens to that
 //!   app instead, to test per-app capture without Spotify running.
 //! - `--probe-system` does the same but listens to everything the PC plays.
-//! - `--probe-lyrics <title> <artist>` looks one track up on LRCLIB.
+//! - `--probe-lyrics <title> <artist>` looks one track up, for word timing
+//!   and on LRCLIB.
 
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
@@ -113,6 +114,16 @@ fn probe_lyrics(title: &str, artist: &str) {
         album: String::new(),
         duration_ms: 0,
     };
+    let servers = sonic_veil_core::lyricsplus::SERVERS.map(str::to_owned);
+    match lyrics::words(&query, &servers) {
+        Some(lines) => {
+            println!("word-timed, {} lines", lines.len());
+            for word in lines.iter().take(2).flat_map(|line| &line.words) {
+                println!("  {:>6}..{:<6} {}", word.start_ms, word.end_ms, word.text);
+            }
+        }
+        None => println!("no word timing found"),
+    }
     match lyrics::lookup(&query) {
         lyrics::Lyrics::Synced(lines) => {
             println!("synced, {} lines", lines.len());

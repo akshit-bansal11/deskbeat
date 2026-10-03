@@ -1210,10 +1210,21 @@ fn lyrics(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.slider_u32("Lines above", &mut l.lines_before, 0, 6, 1)?;
     ui.slider_u32("Lines below", &mut l.lines_after, 0, 6, 1)?;
     ui.slider("Line spacing", &mut l.line_gap, 0.0, 2.0, 0.05)?;
+    ui.slider("Current line size", &mut l.active_scale, 1.0, 1.6, 0.02)?;
+    ui.slider("Fade with distance", &mut l.falloff, 0.0, 0.9, 0.05)?;
+    ui.toggle("Real word timing", &mut l.word_sync)?;
+    ui.note("Word timing comes from a LyricsPlus server, when it has the track.")?;
 
     ui.header("Colours")?;
     ui.color("Current line", &mut l.active_color, &THEME_COLORS)?;
     ui.color("Current word", &mut l.word_color, &THEME_COLORS)?;
+    ui.slider(
+        "Unsung words opacity",
+        &mut l.unsung_opacity,
+        0.0,
+        1.0,
+        0.02,
+    )?;
     ui.color("Other lines", &mut l.inactive_color, &THEME_COLORS)?;
     ui.slider(
         "Other lines opacity",

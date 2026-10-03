@@ -11,7 +11,7 @@ It is built as a light alternative to a Rainmeter setup. Widgets redraw only whe
 | Widget | What it shows |
 | --- | --- |
 | **Visualizer** | A spectrum of Spotify's audio only, not your games or calls. Bars, mirrored bars or a wave. |
-| **Lyrics** | Time-synced lyrics from [LRCLIB](https://lrclib.net), highlighted by line or by word, cached on disk. |
+| **Lyrics** | Time-synced lyrics, highlighted by line or word by word as each word is sung. Word timing comes from a LyricsPlus server, line timing from [LRCLIB](https://lrclib.net) when that has nothing. Cached on disk. |
 | **Player** | Album art, title, artist, a progress bar you can click to seek, and previous, play/pause and next. |
 | **Clock** | Day, time and date. |
 
@@ -69,7 +69,7 @@ sonic-veil.exe --probe > probe.txt
 With Spotify playing, this records for eight seconds what Windows reports about the track and how loud Spotify's audio is. Two more:
 
 - `--probe-system` listens to everything the PC plays instead of Spotify alone.
-- `--probe-lyrics "Title" "Artist"` looks one track up on LRCLIB.
+- `--probe-lyrics "Title" "Artist"` looks one track up, for word timing and on LRCLIB.
 
 Errors are logged to `%LOCALAPPDATA%\sonic-veil\sonic-veil.log`. The lyrics cache is in the same folder and is safe to delete.
 

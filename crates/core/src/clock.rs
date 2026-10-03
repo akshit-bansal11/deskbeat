@@ -295,6 +295,7 @@ mod tests {
             start_ms,
             end_ms,
             synthesized: true,
+            joined: false,
         }
     }
 

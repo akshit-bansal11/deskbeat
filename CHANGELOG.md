@@ -8,6 +8,14 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Lyrics timed word by word, from a LyricsPlus server, with LRCLIB as the
+  fallback. Each word fills in as it is sung and stays lit afterwards.
+  Before, word mode spread a line's time over its words by their length,
+  which was a guess. `word_sync = false` under `[lyrics]` turns the extra
+  lookup off, and `word_servers` lists the servers to ask.
+- Lyrics: the line at the centre is drawn larger, lines fade the further
+  they are from it, and the unsung words of the current line have their own
+  opacity. All three are settings.
 - A colour picker on every colour setting: a saturation and brightness
   square, a hue bar, and a hex field that takes typing.
 - Shift+click in edit layout selects several elements, which then move

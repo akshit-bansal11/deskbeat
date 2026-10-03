@@ -592,6 +592,19 @@ pub struct LyricsCfg {
     pub offset_ms: i32,
     /// Duration of the scroll between lines. 0 disables it.
     pub scroll_ms: u32,
+    /// How much larger the line at the centre is drawn. 1 keeps every line
+    /// the same size.
+    pub active_scale: f32,
+    /// How much each further line away from the centre fades, 0 to 0.9.
+    pub falloff: f32,
+    /// In word mode, the opacity of the words of the current line that have
+    /// not been sung yet.
+    pub unsung_opacity: f32,
+    /// Ask the servers below for the time each word is sung. LRCLIB, the
+    /// fallback, only knows when lines start.
+    pub word_sync: bool,
+    /// LyricsPlus servers, tried in order.
+    pub word_servers: Vec<String>,
     pub frame: Frame,
 }
 
@@ -620,6 +633,11 @@ impl Default for LyricsCfg {
             shadow_opacity: 0.38,
             offset_ms: 0,
             scroll_ms: 380,
+            active_scale: 1.12,
+            falloff: 0.25,
+            unsung_opacity: 0.5,
+            word_sync: true,
+            word_servers: crate::lyricsplus::SERVERS.map(str::to_owned).to_vec(),
         }
     }
 }
@@ -898,6 +916,9 @@ impl Config {
         unit(&mut l.opacity);
         unit(&mut l.inactive_opacity);
         unit(&mut l.shadow_opacity);
+        unit(&mut l.unsung_opacity);
+        range(&mut l.active_scale, 1.0, 1.6, 1.12);
+        range(&mut l.falloff, 0.0, 0.9, 0.25);
         range(&mut l.stroke_width, 0.0, 6.0, 0.0);
         range(&mut l.size, 10.0, 160.0, 30.0);
         range(&mut l.line_gap, 0.0, 3.0, 0.55);

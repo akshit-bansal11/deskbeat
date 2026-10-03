@@ -25,7 +25,7 @@ pub struct Query {
 }
 
 /// Percent-encodes everything except RFC 3986 unreserved characters.
-fn encode(s: &str) -> String {
+pub(crate) fn encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for byte in s.bytes() {
         if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {

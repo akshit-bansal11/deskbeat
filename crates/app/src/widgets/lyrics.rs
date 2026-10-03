@@ -2,8 +2,8 @@
 //! above and below, scrolling as the song moves on.
 
 use sonic_veil_core::clock::{Anchor, Clock, find_line_index, find_word_index};
-use sonic_veil_core::color::{mix, parse_hex, with_alpha};
-use sonic_veil_core::config::LyricsMode;
+use sonic_veil_core::color::{Rgba, mix, parse_hex, with_alpha};
+use sonic_veil_core::config::{Align, LyricsMode};
 use sonic_veil_core::timing::Line;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 use windows::core::Result;
@@ -35,6 +35,8 @@ pub struct LyricsView {
     /// Whether that line is still being sung, rather than in the gap after it.
     lit: bool,
     word: Option<usize>,
+    /// Track position at the last tick, which the word fill is drawn from.
+    pos: i64,
 
     /// The scroll position, as a fractional line index, eased from `from` to `to`.
     from: f32,
@@ -65,11 +67,13 @@ fn place_synced(lines: &[Line], pos: i64, by_word: bool) -> Place {
     if let Some(line) = line.filter(|_| lit) {
         next_change = next_change.min(line.end_ms);
         if by_word {
+            // Sourced words overlap and leave gaps, so they are not in order.
             let boundary = line
                 .words
                 .iter()
                 .flat_map(|w| [w.start_ms, w.end_ms])
-                .find(|&t| t > pos);
+                .filter(|&t| t > pos)
+                .min();
             next_change = next_change.min(boundary.unwrap_or(i64::MAX));
         }
     }
@@ -183,15 +187,51 @@ fn decoration(ctx: &Ctx) -> TextFx {
     }
 }
 
-/// UTF-16 offset and length of word `index` in a line whose words are joined
-/// by single spaces.
-fn word_range(line: &Line, index: usize) -> (u32, u32) {
-    let units = |text: &str| text.encode_utf16().count() as u32;
-    let start = line.words[..index]
-        .iter()
-        .map(|w| units(&w.text) + 1)
-        .sum::<u32>();
-    (start, units(&line.words[index].text))
+/// UTF-16 offset and length of each word of a line within its text.
+fn word_ranges(line: &Line) -> impl Iterator<Item = (u32, u32)> + '_ {
+    line.words.iter().scan(0, |start, word| {
+        let len = word.text.encode_utf16().count() as u32;
+        let range = (*start, len);
+        *start += len + u32::from(!word.joined);
+        Some(range)
+    })
+}
+
+/// Paints the sung part of the current line over its unsung text: the words
+/// that are over in `sung`, and as much of each word in progress as has been
+/// sung in `singing`, behind an edge `feather` wide.
+fn draw_sung(
+    g: &Gfx,
+    layout: &IDWriteTextLayout,
+    line: &Line,
+    (x, y): (f32, f32),
+    pos: i64,
+    (sung, singing): (Rgba, Rgba),
+    feather: f32,
+) -> Result<()> {
+    for (word, (start, len)) in line.words.iter().zip(word_ranges(line)) {
+        if pos < word.start_ms {
+            continue;
+        }
+        let boxes = Gfx::range_rects(layout, start, len);
+        if pos >= word.end_ms {
+            for clip in boxes {
+                g.draw_text_clipped(layout, x, y, sung, clip);
+            }
+            continue;
+        }
+        let done = (pos - word.start_ms) as f32 / (word.end_ms - word.start_ms) as f32;
+        // The edge travels the word's width plus its own, so the word is
+        // empty when it starts and full when it ends.
+        // ponytail: fills left to right, wrong for right-to-left scripts;
+        // flip the gradient by the layout's reading direction if that matters.
+        for clip in boxes {
+            let edge = x + clip.left + done * (clip.right - clip.left + feather);
+            let brush = g.gradient(edge - feather, edge, singing, with_alpha(singing, 0.0))?;
+            g.draw_text_with(layout, x, y, &brush, clip);
+        }
+    }
+    Ok(())
 }
 
 impl Widget for LyricsView {
@@ -236,9 +276,13 @@ impl Widget for LyricsView {
         if (place.active, place.lit, place.word) != (self.active, self.lit, self.word) {
             dirty = true;
         }
+        // A word in progress is filling, so every new position is a new picture.
+        let filling = place.word.is_some() && pos != self.pos;
+        dirty |= filling;
         self.active = place.active;
         self.lit = place.lit;
         self.word = place.word;
+        self.pos = pos;
 
         let target = place.active.unwrap_or(0) as f32;
         if new_lyrics {
@@ -262,7 +306,7 @@ impl Widget for LyricsView {
             }
         }
 
-        let wake = if self.from != self.to {
+        let wake = if self.from != self.to || (filling && media.playing) {
             Wake::Frame
         } else if media.playing && place.next_change != i64::MAX {
             let wait = (place.next_change - pos).max(1) as f64;
@@ -300,10 +344,18 @@ impl Widget for LyricsView {
         }
 
         let pad = if cfg.card { 22.0 } else { 6.0 };
-        let width = (w - 2.0 * pad).max(1.0);
+        // Lines are laid out narrower than the widget by the factor the
+        // centre line is enlarged by, so that line still fits once it is.
+        let width = ((w - 2.0 * pad) / cfg.active_scale).max(1.0);
         if self.layouts.len() != texts.len() || self.layout_width != width {
             self.build_layouts(g, &texts, width, ctx)?;
         }
+        // Where the lines sit, and the point they are enlarged about.
+        let (x, anchor) = match cfg.align {
+            Align::Left => (pad, pad),
+            Align::Center => ((w - width) / 2.0, w / 2.0),
+            Align::Right => (w - pad - width, w - pad),
+        };
 
         let last = texts.len() - 1;
         let p = self
@@ -320,6 +372,10 @@ impl Widget for LyricsView {
         );
         let active = with_alpha(named_color(&cfg.active_color, ctx), o);
         let word_color = with_alpha(named_color(&cfg.word_color, ctx), o);
+        let unsung = with_alpha(
+            named_color(&cfg.inactive_color, ctx),
+            cfg.unsung_opacity * o,
+        );
         let first = (p - before - 1.0).max(0.0) as usize;
         let end = ((p + after + 2.0) as usize).min(last);
 
@@ -327,12 +383,14 @@ impl Widget for LyricsView {
             let distance = i as f32 - p;
             // Lines fade in and out as they cross the edge of the visible range,
             // so nothing pops when the scroll brings a new line in.
-            let fade = if distance < 0.0 {
+            let edge = if distance < 0.0 {
                 before + 1.0 + distance
             } else {
                 after + 1.0 - distance
             }
             .clamp(0.0, 1.0);
+            // Each line further from the centre is fainter than the last.
+            let fade = edge * (1.0 - cfg.falloff).powf((distance.abs() - 1.0).max(0.0));
             let (layout, height) = &self.layouts[i];
             let y = h / 2.0 + self.centres[i] - scroll - height / 2.0;
             if fade <= 0.0 || y + height < 0.0 || y > h {
@@ -340,25 +398,29 @@ impl Widget for LyricsView {
             }
 
             let current = self.lit && self.active == Some(i);
-            // The highlight arrives with the line as it scrolls to the centre.
-            let glow = if current {
-                (1.0 - distance.abs()).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            let by_word = current && cfg.mode == LyricsMode::Word && synced.is_some();
-            let color = with_alpha(mix(inactive, active, glow), fade);
-            g.draw_text_fx(layout, pad, y, color, &decoration(ctx));
+            // Size and highlight arrive with the line as it scrolls to the centre.
+            let nearness = (1.0 - distance.abs()).clamp(0.0, 1.0);
+            let glow = if current { nearness } else { 0.0 };
+            // In word mode the current line starts out unsung and is filled
+            // in word by word; otherwise all of it is lit at once.
+            let by_word = synced
+                .filter(|_| current && cfg.mode == LyricsMode::Word)
+                .map(|lines| &lines[i]);
+            let lit = if by_word.is_some() { unsung } else { active };
 
-            if by_word
-                && let (Some(lines), Some(word)) = (synced, self.word)
-                && word < lines[i].words.len()
-            {
-                let (start, len) = word_range(&lines[i], word);
-                for clip in Gfx::range_rects(layout, start, len) {
-                    g.draw_text_clipped(layout, pad, y, with_alpha(word_color, fade), clip);
-                }
-            }
+            let scale = 1.0 + (cfg.active_scale - 1.0) * nearness;
+            let saved = g.scale_about(scale, anchor, y + height / 2.0);
+            let color = with_alpha(mix(inactive, lit, glow), fade);
+            g.draw_text_fx(layout, x, y, color, &decoration(ctx));
+            let filled = by_word.map_or(Ok(()), |line| {
+                let colors = (
+                    with_alpha(active, glow * fade),
+                    with_alpha(word_color, glow * fade),
+                );
+                draw_sung(g, layout, line, (x, y), self.pos, colors, cfg.size * 0.4)
+            });
+            g.restore(saved);
+            filled?;
         }
         Ok(())
     }
@@ -423,9 +485,11 @@ mod tests {
 
     #[test]
     fn word_ranges_count_utf16_units() {
-        let lines = normalize_lines(&parse_lrc("[00:01.00] héllo 😀 end").lines, 9000);
-        assert_eq!(word_range(&lines[0], 0), (0, 5));
-        assert_eq!(word_range(&lines[0], 1), (6, 2));
-        assert_eq!(word_range(&lines[0], 2), (9, 3));
+        let mut lines = normalize_lines(&parse_lrc("[00:01.00] héllo 😀 end").lines, 9000);
+        let ranges = |line: &Line| word_ranges(line).collect::<Vec<_>>();
+        assert_eq!(ranges(&lines[0]), [(0, 5), (6, 2), (9, 3)]);
+        // A syllable joined to the next has no space after it.
+        lines[0].words[0].joined = true;
+        assert_eq!(ranges(&lines[0]), [(0, 5), (5, 2), (8, 3)]);
     }
 }

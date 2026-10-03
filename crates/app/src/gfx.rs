@@ -14,7 +14,7 @@ use windows::Win32::Graphics::DirectWrite::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::*;
 use windows::Win32::Graphics::Imaging::IWICBitmap;
-use windows::core::{BOOL, Error, HSTRING, Interface, Result, w};
+use windows::core::{BOOL, Error, HSTRING, Interface, Param, Result, w};
 use windows_numerics::{Matrix3x2, Vector2};
 
 pub const ICON_FONT: &str = "Segoe Fluent Icons";
@@ -386,6 +386,35 @@ impl Gfx {
         unsafe { self.rt.SetTransform(&matrix) };
     }
 
+    /// Enlarges everything drawn from here on about the point `(cx, cy)`,
+    /// which stays where it is. Returns the transform to `restore`.
+    pub fn scale_about(&self, factor: f32, cx: f32, cy: f32) -> Matrix3x2 {
+        let mut old = Matrix3x2 {
+            M11: 1.0,
+            M12: 0.0,
+            M21: 0.0,
+            M22: 1.0,
+            M31: 0.0,
+            M32: 0.0,
+        };
+        unsafe { self.rt.GetTransform(&mut old) };
+        // The transform in place is only ever a scale and an offset, so the
+        // two compose by hand: enlarge about the point, then apply the old.
+        let matrix = Matrix3x2 {
+            M11: factor * old.M11,
+            M22: factor * old.M22,
+            M31: cx * (1.0 - factor) * old.M11 + old.M31,
+            M32: cy * (1.0 - factor) * old.M22 + old.M32,
+            ..old
+        };
+        unsafe { self.rt.SetTransform(&matrix) };
+        old
+    }
+
+    pub fn restore(&self, transform: Matrix3x2) {
+        unsafe { self.rt.SetTransform(&transform) };
+    }
+
     // ----- shapes ----------------------------------------------------------
 
     fn solid(&self, c: Rgba) -> &ID2D1SolidColorBrush {
@@ -686,7 +715,7 @@ impl Gfx {
 
     /// The boxes covering a run of UTF-16 code units, one per visual line.
     pub fn range_rects(layout: &IDWriteTextLayout, start: u32, len: u32) -> Vec<D2D_RECT_F> {
-        let mut boxes = [DWRITE_HIT_TEST_METRICS::default(); 4];
+        let mut boxes = [DWRITE_HIT_TEST_METRICS::default(); 8];
         let mut count = 0;
         let hit =
             unsafe { layout.HitTestTextRange(start, len, 0.0, 0.0, Some(&mut boxes), &mut count) };
@@ -794,6 +823,19 @@ impl Gfx {
         c: Rgba,
         clip: D2D_RECT_F,
     ) {
+        self.draw_text_with(layout, x, y, self.solid(c), clip);
+    }
+
+    /// Draws `layout` only inside `clip`, filled with `brush`. A gradient
+    /// brush is positioned in the widget's coordinates, not the layout's.
+    pub fn draw_text_with<B: Param<ID2D1Brush>>(
+        &self,
+        layout: &IDWriteTextLayout,
+        x: f32,
+        y: f32,
+        brush: B,
+        clip: D2D_RECT_F,
+    ) {
         let clip = D2D_RECT_F {
             left: clip.left + x,
             top: clip.top + y,
@@ -806,7 +848,7 @@ impl Gfx {
             self.rt.DrawTextLayout(
                 point(x, y),
                 layout,
-                self.solid(c),
+                brush,
                 D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
             );
             self.rt.PopAxisAlignedClip();
