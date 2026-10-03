@@ -17,6 +17,8 @@ const BAR_HEIGHT: f32 = 4.0;
 /// clicking to seek and for grabbing it in edit mode.
 const BAR_SLOP: f32 = 9.0;
 const TIME_SIZE: f32 = 12.0;
+/// Room for a track time such as 1:23:45.
+const TIME_ROOM: f32 = 120.0;
 const IDLE_MESSAGE: &str = "Play something on Spotify";
 
 // Segoe Fluent Icons code points.
@@ -167,7 +169,8 @@ impl Widget for Player {
             (IDLE_MESSAGE, p.artist_size, 400, dim)
         };
         let font = theme.font.as_str();
-        let placed = place_text(g, title, (font, title_size, title_weight), &p.title, w, 0.0)?;
+        let face = (font, title_size, title_weight);
+        let placed = place_text(g, title, face, &p.title, p.text_width, 0.0)?;
         g.draw_text(&placed.layout, placed.x, p.title.y, title_color, shadow);
         self.parts.push((PlayerPart::Title as u8, placed.rect));
         if !media.present {
@@ -178,7 +181,7 @@ impl Widget for Player {
             &media.artist,
             (font, p.artist_size, 400),
             &p.artist,
-            w,
+            p.text_width,
             0.0,
         )?;
         g.draw_text(&placed.layout, placed.x, p.artist.y, dim, shadow);
@@ -238,7 +241,7 @@ impl Widget for Player {
                 (PlayerPart::Elapsed, &p.elapsed, clock_text(position)),
                 (PlayerPart::Total, &p.total, clock_text(media.duration_ms)),
             ] {
-                let placed = place_text(g, &label, (font, TIME_SIZE, 400), spot, w, 0.0)?;
+                let placed = place_text(g, &label, (font, TIME_SIZE, 400), spot, TIME_ROOM, 0.0)?;
                 g.draw_text(&placed.layout, placed.x, spot.y, dim, shadow);
                 self.parts.push((part as u8, placed.rect));
             }

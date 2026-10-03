@@ -87,6 +87,8 @@ thread_local! {
     /// Boxes, in each widget window's own pixels, that take the mouse in
     /// edit mode instead of moving the whole window.
     static PARTS: RefCell<Vec<(isize, RECT)>> = const { RefCell::new(Vec::new()) };
+    /// Widget windows sized by their contents, which have no edges to drag.
+    static FITTED: RefCell<Vec<isize>> = const { RefCell::new(Vec::new()) };
 }
 
 fn push(event: Event) {
@@ -104,8 +106,15 @@ pub fn set_edit_mode(on: bool) {
 }
 
 /// Replaces the draggable boxes of one widget window.
-pub fn set_parts(hwnd: HWND, boxes: &[RECT]) {
+/// `fitted` marks a window whose size follows its elements.
+pub fn set_parts(hwnd: HWND, boxes: &[RECT], fitted: bool) {
     let key = hwnd.0 as isize;
+    FITTED.with_borrow_mut(|windows| {
+        windows.retain(|owner| *owner != key);
+        if fitted {
+            windows.push(key);
+        }
+    });
     PARTS.with_borrow_mut(|parts| {
         parts.retain(|(owner, _)| *owner != key);
         parts.extend(boxes.iter().map(|r| (key, *r)));
@@ -138,6 +147,15 @@ fn edit_hit_test(hwnd: HWND, (x, y): (i32, i32)) -> u32 {
     if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() {
         return HTCAPTION;
     }
+    // An element of the widget: the app drags that alone.
+    if on_part(hwnd, x - r.left, y - r.top) {
+        return HTCLIENT;
+    }
+    // A window wrapped around its elements has no edges of its own to drag;
+    // the space between elements moves them all together.
+    if FITTED.with_borrow(|windows| windows.contains(&(hwnd.0 as isize))) {
+        return HTCAPTION;
+    }
     let border = (12 * dpi(hwnd) / 96) as i32;
     let (left, right) = (x < r.left + border, x >= r.right - border);
     let (top, bottom) = (y < r.top + border, y >= r.bottom - border);
@@ -150,8 +168,6 @@ fn edit_hit_test(hwnd: HWND, (x, y): (i32, i32)) -> u32 {
         (_, true, ..) => HTRIGHT,
         (_, _, true, _) => HTTOP,
         (_, _, _, true) => HTBOTTOM,
-        // An element of the widget: the app drags that alone.
-        _ if on_part(hwnd, x - r.left, y - r.top) => HTCLIENT,
         // Anywhere else moves the whole widget.
         _ => HTCAPTION,
     }

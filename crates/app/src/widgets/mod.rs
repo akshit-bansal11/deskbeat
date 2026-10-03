@@ -183,6 +183,21 @@ impl Kind {
         }
     }
 
+    /// Widgets with no box of their own: their window is kept wrapped around
+    /// wherever their elements have been put.
+    pub fn fitted(self) -> bool {
+        matches!(self, Kind::Clock | Kind::Player)
+    }
+
+    /// How many separately placed elements the widget has.
+    pub fn part_count(self) -> u8 {
+        match self {
+            Kind::Clock => ClockRow::ALL.len() as u8,
+            Kind::Player => PlayerPart::ALL.len() as u8,
+            Kind::Lyrics | Kind::Visualizer => 0,
+        }
+    }
+
     /// Widgets with nothing to show while Spotify is closed.
     pub fn needs_spotify(self) -> bool {
         self != Kind::Clock
@@ -234,23 +249,17 @@ const LINE_BOX_TRIM: f32 = 0.15;
 /// The narrowest a line is ever squeezed to before it is cut with an ellipsis.
 const MIN_TEXT_WIDTH: f32 = 60.0;
 
-/// Lays out one line of text at `spot` inside a widget `canvas_w` wide.
-/// `face` is the font family, size and weight. The text runs from the spot
-/// toward the far edge of the widget and is cut with an ellipsis there.
+/// Lays out one line of text at `spot`. `face` is the font family, size and
+/// weight. The text takes at most `room` and is cut with an ellipsis beyond.
 pub fn place_text(
     g: &mut Gfx,
     text: &str,
     (font, size, weight): (&str, f32, u32),
     spot: &Spot,
-    canvas_w: f32,
+    room: f32,
     spacing: f32,
 ) -> Result<Placed> {
-    let room = match spot.align {
-        Align::Left => canvas_w - spot.x,
-        Align::Right => spot.x,
-        Align::Center => 2.0 * spot.x.min(canvas_w - spot.x),
-    }
-    .max(MIN_TEXT_WIDTH);
+    let room = room.max(MIN_TEXT_WIDTH);
     let style = TextStyle {
         font,
         size,

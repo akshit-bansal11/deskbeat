@@ -353,6 +353,8 @@ pub struct PlayerCfg {
     pub art_size: f32,
     /// Length of the progress bar.
     pub bar_width: f32,
+    /// The most room the title and artist take before being cut short.
+    pub text_width: f32,
     pub art: Spot,
     pub title: Spot,
     pub artist: Spot,
@@ -380,6 +382,7 @@ impl Default for PlayerCfg {
             artist_size: 14.0,
             art_size: 0.0,
             bar_width: 0.0,
+            text_width: 270.0,
             art: Spot::default(),
             title: Spot::default(),
             artist: Spot::default(),
@@ -728,6 +731,7 @@ impl Config {
         range(&mut p.artist_size, 8.0, 72.0, 14.0);
         range(&mut p.art_size, 0.0, 1000.0, 104.0);
         range(&mut p.bar_width, 0.0, 4000.0, 274.0);
+        range(&mut p.text_width, 60.0, 4000.0, 270.0);
         for part in PlayerPart::ALL {
             p.spot_mut(part).sanitize();
         }

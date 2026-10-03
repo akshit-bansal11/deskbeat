@@ -8,6 +8,9 @@ use windows::core::Result;
 use super::{Ctx, Part, Tick, Wake, Widget, draw_card, place_text};
 use crate::gfx::Gfx;
 
+/// A clock row is never cut short: the window grows to hold it.
+const ROOM: f32 = 4000.0;
+
 #[derive(Default)]
 pub struct Clock {
     /// Day, time and date as currently drawn.
@@ -102,7 +105,7 @@ impl Widget for Clock {
             if !shown || text.is_empty() {
                 continue;
             }
-            let placed = place_text(g, text, (font.as_str(), size, weight), spot, w, spacing)?;
+            let placed = place_text(g, text, (font.as_str(), size, weight), spot, ROOM, spacing)?;
             g.draw_text(&placed.layout, placed.x, spot.y, color, shadow);
             self.parts.push((row as u8, placed.rect));
         }

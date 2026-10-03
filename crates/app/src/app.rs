@@ -17,6 +17,7 @@ use sonic_veil_core::timefmt::LocalTime;
 use windows::Win32::Foundation::{
     ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, RECT, WAIT_OBJECT_0,
 };
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::Storage::FileSystem::{
     FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_NOTIFY_CHANGE_SIZE,
@@ -82,6 +83,9 @@ const RELOAD_DELAY_MS: f64 = 200.0;
 const SAVE_DELAY_MS: f64 = 500.0;
 /// Show Desktop reorders windows a moment after the foreground changes.
 const DESKTOP_RECHECK_MS: f64 = 250.0;
+/// Space kept between a fitted widget's elements and the edge of its window,
+/// which is also the margin of the card drawn behind them.
+const FIT_PAD: f32 = 14.0;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "SonicVeil";
@@ -191,6 +195,8 @@ struct App {
     quit: bool,
     /// The element being dragged in edit mode: its widget, its id, and where
     /// the pointer last was.
+    /// Positions are on the screen, not in the window: the window itself
+    /// moves as it re-wraps around the element being dragged.
     drag: Option<(usize, u8, f32, f32)>,
 }
 
@@ -425,6 +431,8 @@ impl App {
         };
 
         let mut wake = Wake::Idle;
+        // What each fitted widget just drew, to re-wrap its window around.
+        let mut fits: Vec<(Kind, Vec<Part>)> = Vec::new();
         for host in &mut self.hosts {
             if !host.visible || host.paused {
                 continue;
@@ -458,7 +466,10 @@ impl App {
                             bottom: px(r.bottom),
                         })
                         .collect();
-                    window::set_parts(host.hwnd, &boxes);
+                    window::set_parts(host.hwnd, &boxes, host.kind.fitted());
+                }
+                if host.kind.fitted() {
+                    fits.push((host.kind, host.widget.parts().to_vec()));
                 }
             }
             wake = wake.sooner(match host.due {
@@ -468,6 +479,14 @@ impl App {
             });
         }
 
+        let mut refitted = false;
+        for (kind, parts) in fits {
+            refitted |= self.fit(kind, &parts);
+        }
+        if refitted {
+            self.sync_windows();
+            wake = Wake::Frame;
+        }
         if self.settings.as_ref().is_some_and(|panel| panel.dirty) {
             wake = Wake::Frame;
         }
@@ -481,6 +500,53 @@ impl App {
             wake = wake.sooner(Wake::after_ms(500.0));
         }
         wake
+    }
+
+    /// Wraps a fitted widget's window around the elements it just drew, with
+    /// a margin, moving the window and shifting the elements by the same
+    /// amount so nothing moves on screen. Returns whether anything changed.
+    fn fit(&mut self, kind: Kind, parts: &[Part]) -> bool {
+        let Some((_, first)) = parts.first() else {
+            return false;
+        };
+        let bounds = parts.iter().fold(*first, |all, (_, r)| D2D_RECT_F {
+            left: all.left.min(r.left),
+            top: all.top.min(r.top),
+            right: all.right.max(r.right),
+            bottom: all.bottom.max(r.bottom),
+        });
+        // Whole pixels, so the window and its contents shift by the same amount.
+        let (dx, dy) = (
+            (bounds.left - FIT_PAD).round(),
+            (bounds.top - FIT_PAD).round(),
+        );
+        let w = ((bounds.right - bounds.left + 2.0 * FIT_PAD).ceil() as u32).max(80);
+        let h = ((bounds.bottom - bounds.top + 2.0 * FIT_PAD).ceil() as u32).max(40);
+
+        let frame = *kind.frame_mut(&mut self.cfg);
+        if dx == 0.0 && dy == 0.0 && (frame.w, frame.h) == (w, h) {
+            return false;
+        }
+        let (_, _, aw, ah) = window::work_area();
+        let area = (
+            (aw as f32 / self.scale) as i32,
+            (ah as f32 / self.scale) as i32,
+        );
+        let (left, top) = frame.origin(area.0, area.1);
+        for id in 0..kind.part_count() {
+            if let Some(spot) = kind.spot_mut(&mut self.cfg, id) {
+                spot.x -= dx;
+                spot.y -= dy;
+            }
+        }
+        let frame = kind.frame_mut(&mut self.cfg);
+        (frame.w, frame.h) = (w, h);
+        frame.set_origin(left + dx as i32, top + dy as i32, area.0, area.1);
+        for host in self.hosts.iter_mut().filter(|host| host.kind == kind) {
+            host.dirty = true;
+            host.due = Due::Now;
+        }
+        true
     }
 
     /// Makes every widget tick on the next pass: something they read changed.
@@ -657,7 +723,9 @@ impl App {
             return;
         };
         if self.edit {
-            self.drag_part(index, kind, x as f32 / self.scale, y as f32 / self.scale);
+            let (left, top, _, _) = window::bounds(hwnd);
+            let dip = |px: i32| px as f32 / self.scale;
+            self.drag_part(index, kind, (dip(x), dip(y)), (dip(left + x), dip(top + y)));
             return;
         }
         let host = &mut self.hosts[index];
@@ -687,7 +755,11 @@ impl App {
     }
 
     /// Edit mode: moves one element of a widget with the pointer.
-    fn drag_part(&mut self, index: usize, kind: Mouse, x: f32, y: f32) {
+    ///
+    /// `at` is the pointer inside the widget and `screen` the same point on
+    /// the screen, both in display-independent pixels.
+    fn drag_part(&mut self, index: usize, kind: Mouse, at: (f32, f32), screen: (f32, f32)) {
+        let ((x, y), (sx, sy)) = (at, screen);
         match kind {
             Mouse::Down => {
                 // The last one drawn is on top, so it wins where two overlap.
@@ -698,7 +770,7 @@ impl App {
                     .rev()
                     .find(|(_, r)| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
                     .map(|(id, _)| *id);
-                self.drag = grabbed.map(|id| (index, id, x, y));
+                self.drag = grabbed.map(|id| (index, id, sx, sy));
             }
             Mouse::Move => {
                 let Some((host, id, last_x, last_y)) = self.drag else {
@@ -708,10 +780,10 @@ impl App {
                     return;
                 }
                 if let Some(spot) = self.hosts[index].kind.spot_mut(&mut self.cfg, id) {
-                    spot.x += x - last_x;
-                    spot.y += y - last_y;
+                    spot.x += sx - last_x;
+                    spot.y += sy - last_y;
                 }
-                self.drag = Some((host, id, x, y));
+                self.drag = Some((host, id, sx, sy));
                 self.hosts[index].dirty = true;
             }
             Mouse::Up => {
@@ -888,7 +960,7 @@ impl App {
         self.drag = None;
         if !self.edit {
             for host in &self.hosts {
-                window::set_parts(host.hwnd, &[]);
+                window::set_parts(host.hwnd, &[], false);
             }
         }
         if self.edit {
@@ -1123,6 +1195,10 @@ pub fn draw_edit_frame(
     // Each element that can be dragged on its own gets a box of its own.
     for (_, r) in parts {
         gfx.stroke_round(*r, 3.0, with_alpha(ctx.accent, 0.75), 1.0);
+    }
+    if kind.fitted() {
+        // No box of its own: its elements are the whole of it.
+        return Ok(());
     }
     let radius = ctx.cfg.theme.card_radius.min(w.min(h) / 2.0);
     gfx.fill_round(rect(0.0, 0.0, w, h), radius, with_alpha(ctx.accent, 0.10));
