@@ -170,6 +170,7 @@ dependencies = [
  "serde_json",
  "sonic-veil-core",
  "windows",
+ "windows-core",
  "windows-numerics",
 ]
 
