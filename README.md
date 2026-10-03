@@ -1,6 +1,16 @@
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/deskbeat-dark.svg"><img src="assets/deskbeat-light.svg" width="96" alt="Deskbeat"></picture></p>
+
 # Deskbeat
 
 Desktop widgets for Spotify on Windows 11, in one small native app: a spectrum visualizer, synced lyrics, a clock, and a now-playing player.
+
+<p align="center"><img src="assets/preview.png" width="880" alt="A desktop with a clock top left, a now-playing card below it, lyrics on the right with the current line lit, and a spectrum along the bottom edge"></p>
+
+<p align="center"><sub>All four widgets, drawn by the app's own snapshot mode from made-up data.</sub></p>
+
+[![CI](https://github.com/akshit-bansal11/deskbeat/actions/workflows/ci.yml/badge.svg)](https://github.com/akshit-bansal11/deskbeat/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/akshit-bansal11/deskbeat)](https://github.com/akshit-bansal11/deskbeat/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 It is built as a light alternative to a Rainmeter setup. Widgets redraw only when something changes, and nothing is drawn at all while Spotify is silent or a window covers the desktop.
 
@@ -19,7 +29,7 @@ There is no Spotify login and no client ID: track details and controls come from
 
 ## Install
 
-Download `deskbeat.exe` from [Releases](https://github.com/akshit-bansal11/deskbeat/releases) and run it. There is no installer. The exe is unsigned, so Windows SmartScreen will warn the first time: choose **More info**, then **Run anyway**.
+Download `Deskbeat-<version>.exe` from [Releases](https://github.com/akshit-bansal11/deskbeat/releases/latest) and run it. There is no installer. The exe is unsigned, so Windows SmartScreen will warn the first time: choose **More info**, then **Run anyway**.
 
 It needs Windows 11 and the Spotify desktop app playing on the same PC. Playback sent to another device through Spotify Connect is not seen.
 
@@ -63,7 +73,7 @@ Widgets can sit on the desktop under your windows (the default), behave like a n
 Deskbeat has no console, so its diagnostics write to a file. In a terminal:
 
 ```
-deskbeat.exe --probe > probe.txt
+Deskbeat-1.0.1.exe --probe > probe.txt
 ```
 
 With Spotify playing, this records for eight seconds what Windows reports about the track and how loud Spotify's audio is. Two more:
@@ -95,13 +105,60 @@ Word timing depends on community-run LyricsPlus servers. When none answers, lyri
 
 Memory use measured about 54 MB, above the 40 MB this was aiming for.
 
-## Build
+## Develop
 
-```
-cargo build --release
+The code is MIT-licensed, so you can build it, change it and run your own copy. To send a change back, fork the repository on GitHub, then clone your fork:
+
+```powershell
+git clone https://github.com/<you>/deskbeat.git
+cd deskbeat
+git remote add upstream https://github.com/akshit-bansal11/deskbeat.git   # to pull in later changes
 ```
 
-The quality gate is `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`. `deskbeat.exe --snapshot <dir>` renders every widget to PNG from made-up data, with no GPU or Spotify, which is how CI checks the drawing code.
+| Path | What |
+| --- | --- |
+| `crates/core` | Pure logic with no Windows types: lyric parsing and timing, the sync clock, band mapping, colour, the config schema. Its tests run anywhere. |
+| `crates/app` | The exe: windows, Direct2D drawing, the media session, audio capture, the settings panel. |
+| `scripts/` | The quality gate. |
+| `docs/` | [Architecture](docs/ARCHITECTURE.md). |
+| `packaging/` | The winget manifest. |
+
+### Prerequisites
+
+Windows 11, the stable Rust toolchain (1.89 or later, with `rustfmt` and `clippy`) with the MSVC build tools, and PowerShell 7 (`pwsh`) for the gate.
+
+### Quality gate
+
+One script formats, lints and tests; CI runs the same script in its non-mutating mode, so the local gate and CI cannot disagree.
+
+```powershell
+pwsh scripts/check.ps1        # formats in place, then clippy (warnings are errors) and tests
+pwsh scripts/check.ps1 -Ci    # what CI runs: fails on unformatted code instead of fixing it
+```
+
+### Run locally
+
+- `cargo run --release` starts the tray app. Only one copy runs at a time, so quit a release build first.
+- `cargo run --release -- --snapshot snapshots` renders every widget and the settings panel to PNG from made-up data, with no GPU or Spotify. It is how CI checks the drawing code, and the quickest way to see a visual change.
+- `cargo test --workspace` runs the tests alone.
+
+## Contributing
+
+- **A bug, or something Deskbeat should do:** [open an issue](https://github.com/akshit-bansal11/deskbeat/issues/new/choose). The templates ask for what is needed to act on it. Open one before starting anything bigger than a fix.
+- **A security hole:** report it privately, as [SECURITY.md](SECURITY.md) describes, not in a public issue.
+- **A change:** make it on a branch of your fork, run the gate until it is clean, and open a pull request against `main` here. [CONTRIBUTING.md](CONTRIBUTING.md) has the details.
+
+Releases are built and published by the maintainer; [CHANGELOG.md](CHANGELOG.md) lists what each one changed.
+
+## Support
+
+Deskbeat is free and stays free. If it is useful to you and you would like to say so with money, there are three ways:
+
+- **[Ko-fi](https://ko-fi.com/akshit_bansal11)**, from anywhere.
+- **[PayPal](https://paypal.me/AkshitBansal141)**, from anywhere.
+- **UPI**, from any UPI app in India: `artistbansal2004@okaxis`
+
+A star, a bug report or telling someone about it helps as much.
 
 ## How it stays light
 
@@ -110,6 +167,13 @@ The quality gate is `cargo fmt --all --check`, `cargo clippy --workspace --all-t
 - **Nothing hidden is drawn.** A widget under a maximized or fullscreen window stops entirely.
 - **Low-power GPU.** On a laptop with two GPUs it uses the integrated one.
 
-## Licence
+## License
 
-MIT
+[MIT](LICENSE).
+
+## Credits
+
+- Line-timed lyrics come from [LRCLIB](https://lrclib.net). Word-timed lyrics come from community-run LyricsPlus servers.
+- Built on [windows-rs](https://github.com/microsoft/windows-rs), [RustFFT](https://github.com/ejmahler/RustFFT), [serde](https://serde.rs) and [toml](https://github.com/toml-rs/toml), all MIT or Apache 2.0.
+- The clock's default pairing, Anurati and Quicksand, follows the Mond Rainmeter skin. Neither font is distributed with Deskbeat.
+- Spotify is a trademark of Spotify AB. Deskbeat is not affiliated with or endorsed by Spotify; it reads what Windows reports about the app that is playing.

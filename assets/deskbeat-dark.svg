@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Deskbeat mark for dark pages: the same three bars, on a lighter violet that holds against black. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <rect width="108" height="108" rx="24" fill="#9580FF"/>
+  <rect x="26" y="48" width="14" height="34" rx="7" fill="#FFFFFF"/>
+  <rect x="47" y="26" width="14" height="56" rx="7" fill="#FFFFFF"/>
+  <rect x="68" y="38" width="14" height="44" rx="7" fill="#FFFFFF"/>
+</svg>

@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  # The `windows` crate is held on purpose: its API moves between minor versions, and a bump is a port,
+  # not a version change. windows-core and windows-numerics move with it.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: windows
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: windows-core
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: windows-numerics
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']

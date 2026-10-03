@@ -1,10 +1,31 @@
-# Builds and publishes a release when a version tag is pushed (v0.1.0, ...).
-# Separate from ci.yml on purpose: a green build never implies a release.
-name: release
+name: Release
 
+# Push a tag such as v1.0.1 to publish. The quality gate passes, then the exe is attached to a GitHub
+# Release named for the version, Deskbeat-1.0.1.exe, so several downloads on one PC can be told apart.
+#
+# Running this by hand instead builds the same file from whatever the branch currently holds and attaches
+# it to a DRAFT release. A draft is visible only to accounts with push access to the repo, and GitHub does
+# not create its git tag until it is published, so nothing about it reaches the public: no tag, no entry
+# on the releases page, and releases/latest keeps pointing at the last real release. That is how a build
+# gets onto the owner's own PC for testing without announcing a version.
+#
+# Every `uses:` is pinned to a commit SHA with its tag in a trailing comment, and Dependabot moves the
+# SHA the same way it would move a tag. Rust comes from the runner image through rustup, not an action.
+#
+# There is no signing key and no secret in this workflow, so there is no environment gating it: the only
+# credential is the job's own token, which can write releases to this repository and nothing else.
+#
+# Each release also carries SHA256SUMS.txt and a build provenance attestation, which `gh attestation verify`
+# checks: proof that the file was built by this workflow from this repository at that tag.
 on:
   push:
-    tags: ["v*"]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      label:
+        description: 'Name for the draft build (a run number is appended, so it never collides)'
+        default: 'test-build'
+        required: false
 
 permissions:
   contents: read
@@ -12,29 +33,38 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    timeout-minutes: 30
     permissions:
-      contents: write # create the GitHub Release
-      id-token: write # sign the build attestation
+      contents: write
+      # Both for the provenance attestation: a token to prove which workflow ran, and the right to store it.
+      id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          components: rustfmt, clippy
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy --no-self-update
 
       # The release is built only from a commit that passes the full gate.
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --locked
+      - name: Quality gate
+        run: pwsh scripts/check.ps1 -Ci
       - run: cargo build --release --locked
 
-      - name: The tag matches the crate version
+      # The exe reports the crate version, so a tag that disagrees with it would publish a lie. A hand-run
+      # draft has no tag: it is named for the crate version plus the run number.
+      - name: Work out the version
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}".TrimStart('v')
           $crate = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
             Where-Object name -eq 'deskbeat' | Select-Object -ExpandProperty version
-          if ($tag -ne $crate) { throw "tag $tag does not match crate version $crate" }
+          if ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $tag = $env:GITHUB_REF_NAME.TrimStart('v')
+            if ($tag -ne $crate) { throw "tag $tag does not match crate version $crate" }
+            $version = $crate
+          } else {
+            $version = "$crate-draft.$env:GITHUB_RUN_NUMBER"
+          }
+          "VERSION=$version" >> $env:GITHUB_ENV
 
       # The same smoke test CI runs: every widget draws without a GPU or Spotify.
       - name: Render snapshots
@@ -43,40 +73,69 @@ jobs:
           $run = Start-Process -FilePath target/release/deskbeat.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
           if ($run.ExitCode -ne 0) { throw "snapshot exited with $($run.ExitCode)" }
 
-      - name: Collect release files
+      # The sums are taken after the rename, so SHA256SUMS.txt names the file exactly as it is downloaded.
+      - name: Name the file for the version
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item target/release/deskbeat.exe out/deskbeat.exe
-          Copy-Item snapshots/default.png out/preview.png
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/deskbeat.exe "dist/Deskbeat-$env:VERSION.exe"
           # LF endings: with CRLF, `sha256sum -c` reads the carriage return as
-          # part of the file name and reports every file missing.
-          $sums = Get-ChildItem out -File | ForEach-Object {
+          # part of the file name and reports the file missing.
+          $sums = Get-ChildItem dist -Filter *.exe | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
           }
-          [IO.File]::WriteAllText("$PWD/out/SHA256SUMS.txt", ($sums -join "`n") + "`n")
-          Get-Content out/SHA256SUMS.txt
+          [IO.File]::WriteAllText("$PWD/dist/SHA256SUMS.txt", ($sums -join "`n") + "`n")
+          Get-Content dist/SHA256SUMS.txt
 
-      - name: Release notes from CHANGELOG.md
+      # Tagged releases only. An attestation of a public repository is written to Sigstore's public
+      # transparency log, which would announce a draft build that is meant to stay private.
+      - name: Attest where the file was built
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: 'dist/Deskbeat-*.exe'
+
+      # A tagged run takes that version's section of CHANGELOG.md; a hand-run draft takes Unreleased,
+      # because a draft is a build of work in progress and has no section of its own yet.
+      - name: Take the notes from the changelog
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
-          $text = Get-Content CHANGELOG.md -Raw
-          $match = [regex]::Match($text, "(?ms)^## \[$([regex]::Escape($version))\][^\n]*\n(.*?)(?=^## \[|^\[[^\]]+\]: |\z)")
-          if (-not $match.Success) { throw "CHANGELOG.md has no section for $version" }
-          $match.Groups[1].Value.Trim() | Set-Content -Encoding utf8 notes.md
+          $section = if ($env:GITHUB_EVENT_NAME -eq 'push') { $env:VERSION } else { 'Unreleased' }
+          $text = (Get-Content CHANGELOG.md -Raw) -replace "`r`n", "`n"
+          $match = [regex]::Match($text, "(?ms)^## \[$([regex]::Escape($section))\][^\n]*\n(.*?)(?=^## \[|^\[[^\]]+\]: |\z)")
+          $notes = if ($match.Success) { $match.Groups[1].Value.Trim() } else { '' }
+          if (-not $notes) {
+            if ($env:GITHUB_EVENT_NAME -eq 'push') { throw "CHANGELOG.md has no section for $section" }
+            $notes = 'Nothing is listed under Unreleased yet.'
+          }
+          $notes | Set-Content -Encoding utf8 notes.md
 
-      # Provenance per SLSA v1.1. Attestations need a public repository on the
-      # free plan, so this runs once the repo is public. Verify with:
-      #   gh attestation verify deskbeat.exe --repo akshit-bansal11/deskbeat
-      - uses: actions/attest-build-provenance@v4.2.2
-        if: ${{ !github.event.repository.private }}
-        with:
-          subject-path: out/deskbeat.exe
+      - name: Publish the release
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME "dist/Deskbeat-$env:VERSION.exe" dist/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --title "Deskbeat $env:GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 
-      - uses: softprops/action-gh-release@v3.0.3
-        with:
-          body_path: notes.md
-          files: out/*
-          fail_on_unmatched_files: true
-          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
+      # --draft is what keeps this private, and the run number is what keeps two test builds from
+      # colliding on a name: deleting a release is an owner action, so a job must never need one deleted
+      # to succeed. --target pins the draft to this commit; the tag is only cut if it is ever published.
+      - name: Attach the draft build
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ inputs.label }}-${{ github.run_number }}
+        run: |
+          gh release create $env:NAME "dist/Deskbeat-$env:VERSION.exe" dist/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --title "Deskbeat $env:NAME" --notes-file notes.md --draft --target $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          @(
+            "Draft build **$env:NAME**, visible only to accounts with push access to this repo."
+            ''
+            'Download the file, with its SHA256SUMS.txt:'
+            '```'
+            "gh release download $env:NAME --repo $env:GITHUB_REPOSITORY --dir ."
+            '```'
+          ) -join "`n" >> $env:GITHUB_STEP_SUMMARY

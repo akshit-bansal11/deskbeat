@@ -6,6 +6,27 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-03
+
+No change to the app itself. This release is the repository growing up.
+
+### Changed
+
+- The release file is named for its version, `Deskbeat-1.0.1.exe`, so several
+  downloads on one PC can be told apart. It was `deskbeat.exe`.
+- Releases are published by the workflow's own token with `gh`, and every
+  action in every workflow is pinned to a commit. Rust comes from the runner
+  image, not from an action.
+
+### Added
+
+- `scripts/check.ps1`, the one quality gate, which CI runs in its
+  non-mutating mode.
+- Draft builds: running the release workflow by hand attaches a build to a
+  private draft release.
+- CONTRIBUTING, SECURITY, an architecture document, issue and pull request
+  templates, Dependabot for actions and crates, and a winget manifest.
+
 ## [1.0.0] - 2026-10-03
 
 ### Changed
@@ -113,6 +134,7 @@ First build. A pre-release: see "Not yet verified" below before relying on it.
 - Staying visible through Show Desktop (Win+D) is untested.
 - The exe is unsigned, so Windows SmartScreen warns on first launch.
 
-[Unreleased]: https://github.com/akshit-bansal11/deskbeat/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/akshit-bansal11/deskbeat/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/akshit-bansal11/deskbeat/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/akshit-bansal11/deskbeat/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/akshit-bansal11/deskbeat/releases/tag/v0.1.0
