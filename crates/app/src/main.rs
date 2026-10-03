@@ -6,7 +6,8 @@
 //! Three diagnostics for a machine where a widget stays empty. There is no
 //! console, so redirect their output to a file to read it:
 //! - `--probe` prints what Windows reports about Spotify, and the level of
-//!   Spotify's audio, for eight seconds.
+//!   Spotify's audio, for eight seconds. `--probe <name.exe>` listens to that
+//!   app instead, to test per-app capture without Spotify running.
 //! - `--probe-system` does the same but listens to everything the PC plays.
 //! - `--probe-lyrics <title> <artist>` looks one track up on LRCLIB.
 
@@ -169,7 +170,12 @@ fn main() {
         Some("--snapshot") => {
             snapshot::run(Path::new(args.get(1).map_or("snapshots", String::as_str)))
         }
-        Some("--probe") => probe(AudioSource::Spotify),
+        Some("--probe") => {
+            if let Some(exe) = args.get(1) {
+                capture::set_target_exe(exe.clone());
+            }
+            probe(AudioSource::Spotify)
+        }
         Some("--probe-system") => probe(AudioSource::System),
         Some("--probe-lyrics") => {
             let arg = |i: usize| args.get(i).map_or("", String::as_str);

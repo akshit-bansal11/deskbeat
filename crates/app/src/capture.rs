@@ -6,7 +6,7 @@
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use sonic_veil_core::config::AudioSource;
@@ -172,9 +172,18 @@ struct Stream {
     pid: Option<u32>,
 }
 
+/// The executable whose audio the Spotify source listens to. Only the
+/// `--probe` diagnostic changes it, to test capture against another app.
+static TARGET_EXE: OnceLock<String> = OnceLock::new();
+
+pub fn set_target_exe(name: String) {
+    let _ = TARGET_EXE.set(name);
+}
+
 /// The Spotify process at the root of its tree: Spotify runs several
 /// processes and the audio comes from a child of the first.
 pub fn spotify_pid() -> Option<u32> {
+    let target = TARGET_EXE.get().map_or("Spotify.exe", String::as_str);
     let mut found: Vec<(u32, u32)> = Vec::new();
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
@@ -186,7 +195,7 @@ pub fn spotify_pid() -> Option<u32> {
         while more {
             let name = entry.szExeFile;
             let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-            if String::from_utf16_lossy(&name[..len]).eq_ignore_ascii_case("Spotify.exe") {
+            if String::from_utf16_lossy(&name[..len]).eq_ignore_ascii_case(target) {
                 found.push((entry.th32ProcessID, entry.th32ParentProcessID));
             }
             more = Process32NextW(snapshot, &mut entry).is_ok();
