@@ -15,6 +15,9 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
   time and date, and the player's art, title, artist, three buttons,
   progress bar, elapsed time and total time. In edit mode each is dragged
   separately; empty space still moves the whole widget.
+- The clock and the player have no box of their own: their window wraps
+  around wherever their elements are, so an element can be dragged anywhere
+  without being clipped. In edit mode they show only element outlines.
 - The clock's day, time and date can each be hidden.
 - "Art on the left" and "Centred stack" arrange the player in one click, as
   a starting point. Album art size and progress bar length are settings.
