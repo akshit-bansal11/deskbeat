@@ -2,8 +2,12 @@
 //! Direct2D context as the widgets. Each control reads and writes one config
 //! field in place, so there is no second copy of the settings to keep in step.
 //!
-//! Free-form values (a custom hex colour, any installed font, a hand-written
-//! clock format) are not editable here; the config file takes those.
+//! A sidebar picks a widget, a row of sections under the page's title picks
+//! one part of it, and the rows of that part scroll beneath in cards. Every
+//! setting has one row, on one page.
+//!
+//! Free-form values (any installed font, a hand-written clock format) are
+//! not editable here; the config file takes those.
 
 use std::ffi::c_void;
 
@@ -18,18 +22,25 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{BOOL, Result, w};
 
-use crate::gfx::{Gfx, Surface, TextStyle, rect};
-use crate::menu::{INK, PAPER};
-use crate::widgets::Kind;
+use crate::gfx::{Gfx, ICON_FONT, Surface, TextStyle, rect};
+use crate::menu::{INK, PAPER, mark};
 use crate::window::{self, Mouse};
 
-pub const WIDTH: f32 = 470.0;
-pub const HEIGHT: f32 = 680.0;
-const MARGIN: f32 = 22.0;
-const TABS_HEIGHT: f32 = 52.0;
-const FOOTER_HEIGHT: f32 = 64.0;
-const ROW: f32 = 38.0;
-const COLOR_ROW: f32 = 62.0;
+pub const WIDTH: f32 = 780.0;
+pub const HEIGHT: f32 = 660.0;
+const SIDEBAR: f32 = 196.0;
+const MARGIN: f32 = 24.0;
+/// The page's title and its row of sections, above the scrolling rows.
+const HEADER: f32 = 108.0;
+const ROW: f32 = 40.0;
+const COLOR_ROW: f32 = 66.0;
+/// A card's corner radius, which is also the space above its first row and
+/// below its last: a row's square corners must stay clear of the round ones.
+const CARD_RADIUS: f32 = 10.0;
+/// How far a card's rows sit in from its sides.
+const CARD_INSET: f32 = 16.0;
+/// How near a quarter mark, along a position slider, the knob jumps onto it.
+const SNAP_REACH: f32 = 7.0;
 /// The picker's saturation and brightness square, and the hue bar under it.
 const PICKER_SQUARE: (f32, f32) = (210.0, 120.0);
 const HUE_BAR_HEIGHT: f32 = 16.0;
@@ -44,15 +55,31 @@ const HUE_STOPS: [Rgba; 7] = [
     [1.0, 0.0, 0.0, 1.0],
 ];
 /// Share of a row's width given to the control rather than the label.
-const CONTROL_SHARE: f32 = 0.56;
+const CONTROL_SHARE: f32 = 0.58;
 const WHEEL_STEP: f32 = 56.0;
 
 const BACKGROUND: Rgba = INK;
 const TEXT: Rgba = [PAPER[0], PAPER[1], PAPER[2], 0.92];
 const DIM: Rgba = [PAPER[0], PAPER[1], PAPER[2], 0.56];
 const TRACK: Rgba = [1.0, 1.0, 1.0, 0.14];
+/// Opaque, because a card is painted in overlapping pieces.
+const CARD: Rgba = [0.11, 0.11, 0.125, 1.0];
+const SIDE: Rgba = [0.055, 0.055, 0.065, 1.0];
+const HAIRLINE: Rgba = [PAPER[0], PAPER[1], PAPER[2], 0.07];
 
 pub const TABS: [&str; 5] = ["General", "Clock", "Player", "Lyrics", "Visualizer"];
+/// Segoe Fluent Icons for the sidebar: settings, clock, music, text, chart.
+const TAB_ICONS: [&str; 5] = ["\u{E713}", "\u{E823}", "\u{E8D6}", "\u{E8D2}", "\u{E9D9}"];
+/// The parts of each tab's page. Each is one screenful, more or less.
+const SECTIONS: [&[&str]; 5] = [
+    &["Appearance", "Behaviour", "App"],
+    &["Widget", "Day", "Time", "Date"],
+    &[
+        "Widget", "Art", "Title", "Artist", "Buttons", "Bar", "Played", "Length",
+    ],
+    &["Widget", "Text", "Colours", "Timing"],
+    &["Widget", "Bars", "Colour", "Motion"],
+];
 const SWATCHES: [&str; 10] = [
     "#FFFFFF", "#1ED760", "#7C5CFF", "#21D4FD", "#FF3DCB", "#FF6B6B", "#FFB547", "#F9F871",
     "#101014", "#000000",
@@ -89,29 +116,12 @@ const TIME_FORMATS: [(&str, &str); 4] = [
     ("%l:%M %p", "9:47 PM"),
     ("%l:%M", "9:47"),
 ];
-const DAY_FORMATS: [(&str, &str); 4] = [
-    ("%A", "Saturday"),
-    ("%a", "Sat"),
-    ("%A, %e %B", "Saturday, 3 October"),
-    ("", "Hidden"),
-];
-const DATE_FORMATS: [(&str, &str); 5] = [
+const DAY_FORMATS: [(&str, &str); 2] = [("%A", "Saturday"), ("%a", "Sat")];
+const DATE_FORMATS: [(&str, &str); 4] = [
     ("%e %B %Y", "3 October 2026"),
     ("%B %e, %Y", "October 3, 2026"),
     ("%d/%m/%Y", "03/10/2026"),
     ("%Y-%m-%d", "2026-10-03"),
-    ("", "Hidden"),
-];
-const ANCHORS: [(Anchor, &str); 9] = [
-    (Anchor::TopLeft, "Top left"),
-    (Anchor::Top, "Top"),
-    (Anchor::TopRight, "Top right"),
-    (Anchor::Left, "Left"),
-    (Anchor::Center, "Centre"),
-    (Anchor::Right, "Right"),
-    (Anchor::BottomLeft, "Bottom left"),
-    (Anchor::Bottom, "Bottom"),
-    (Anchor::BottomRight, "Bottom right"),
 ];
 /// Colours a lyric setting can follow by name, ahead of the swatches.
 const THEME_COLORS: [(&str, &str); 2] = [("text", "Text"), ("accent", "Accent")];
@@ -137,6 +147,9 @@ pub struct Status {
     pub edit: bool,
     pub hidden: bool,
     pub autostart: bool,
+    /// Physical pixels per display-independent pixel, for showing positions
+    /// in the display's own pixels.
+    pub scale: f32,
 }
 
 /// What the user did in the panel that the app has to act on.
@@ -198,6 +211,8 @@ impl Picker {
 pub struct View {
     picker: Picker,
     tab: usize,
+    /// The section each tab is showing.
+    section: [usize; 5],
     scroll: f32,
     /// How far the current tab can scroll, as of the last paint.
     max_scroll: f32,
@@ -214,6 +229,7 @@ impl Default for View {
     fn default() -> Self {
         Self {
             tab: 0,
+            section: [0; 5],
             scroll: 0.0,
             max_scroll: 0.0,
             // Off the panel, so nothing starts out hovered.
@@ -237,12 +253,12 @@ impl View {
         view
     }
 
-    /// A view opened on one tab, with the pointer off the panel.
-    pub fn on_tab(tab: usize) -> Self {
-        Self {
-            tab,
-            ..Self::default()
-        }
+    /// A view opened on one section of one tab, with the pointer off the panel.
+    pub fn on(tab: usize, section: usize) -> Self {
+        let mut view = Self::default();
+        view.tab = tab;
+        view.section[tab] = section;
+        view
     }
 
     /// Paints a `w` by `h` panel at the origin and applies whatever the
@@ -261,8 +277,11 @@ impl View {
         let font = cfg.theme.font.clone();
         let own_fonts = gfx.own_fonts();
         gfx.fill_rect(rect(0.0, 0.0, w, h), BACKGROUND);
+        gfx.fill_rect(rect(0.0, 0.0, SIDEBAR, h), SIDE);
 
-        let view = (TABS_HEIGHT, h - FOOTER_HEIGHT);
+        let view = (HEADER, h);
+        let sections = SECTIONS[self.tab];
+        let section = self.section[self.tab].min(sections.len() - 1);
         let mut ui = Ui {
             g: &mut *gfx,
             status,
@@ -272,9 +291,11 @@ impl View {
             font: &font,
             own_fonts: &own_fonts,
             accent,
-            left: MARGIN,
-            width: w - 2.0 * MARGIN,
-            y: TABS_HEIGHT + 6.0 - self.scroll,
+            left: SIDEBAR + MARGIN,
+            width: w - SIDEBAR - 2.0 * MARGIN,
+            y: HEADER - self.scroll,
+            in_card: false,
+            first: true,
             mouse: self.mouse,
             pressed: self.pressed,
             down: self.down,
@@ -292,61 +313,100 @@ impl View {
 
         // The clip is always popped, even if a row failed to draw: an
         // unbalanced clip would fail the whole frame.
-        ui.g.push_clip(rect(0.0, view.0, w, view.1 - view.0));
+        ui.g.push_clip(rect(SIDEBAR, view.0, w - SIDEBAR, view.1 - view.0));
         let built = match self.tab {
-            0 => general(&mut ui, cfg),
-            1 => clock(&mut ui, cfg),
-            2 => player(&mut ui, cfg),
-            3 => lyrics(&mut ui, cfg),
-            _ => visualizer(&mut ui, cfg),
+            0 => general(&mut ui, cfg, section),
+            1 => clock(&mut ui, cfg, section),
+            2 => player(&mut ui, cfg, section),
+            3 => lyrics(&mut ui, cfg, section),
+            _ => visualizer(&mut ui, cfg, section),
         };
+        ui.end_group();
         ui.g.pop_clip();
         built?;
-        let content_height = ui.y + self.scroll - TABS_HEIGHT + 12.0;
+        let content_height = ui.y + self.scroll - HEADER + MARGIN;
 
-        // Tabs and footer sit outside the scrolling area.
+        // Everything else sits outside the scrolling area.
         ui.view = (0.0, h);
-        let tab_width = w / TABS.len() as f32;
+        let mut turned_to = None;
+
+        // The sidebar: the mark, the tabs, and the two things that leave the panel.
+        mark(ui.g, 20.0, 22.0, 28.0);
+        let name = rect(58.0, 22.0, SIDEBAR - 66.0, 28.0);
+        ui.text("Deskbeat", name, 15.0, 600, Align::Left, TEXT)?;
         for (i, name) in TABS.iter().enumerate() {
-            let cell = rect(tab_width * i as f32, 0.0, tab_width, TABS_HEIGHT - 8.0);
+            let item = rect(12.0, 74.0 + 40.0 * i as f32, SIDEBAR - 24.0, 36.0);
             let selected = self.tab == i;
-            if ui.clicked(cell) && !selected {
-                self.tab = i;
-                self.scroll = 0.0;
-                ui.picker.open = None;
-                outcome.redraw = true;
+            if ui.clicked(item) && !selected {
+                turned_to = Some((i, self.section[i]));
+            }
+            if selected {
+                ui.g.fill_round(item, 9.0, with_alpha(PAPER, 0.1));
+            } else if ui.hot(item) {
+                ui.g.fill_round(item, 9.0, with_alpha(PAPER, 0.05));
             }
             let color = if selected { TEXT } else { DIM };
+            let icon = rect(item.left + 10.0, item.top, 22.0, 36.0);
+            ui.glyph(
+                TAB_ICONS[i],
+                icon,
+                15.0,
+                if selected { accent } else { DIM },
+            )?;
+            let label = rect(
+                item.left + 42.0,
+                item.top,
+                item.right - item.left - 50.0,
+                36.0,
+            );
             let weight = if selected { 600 } else { 400 };
-            ui.text(name, cell, 13.0, weight, Align::Center, color)?;
-            if selected {
-                ui.g.fill_rect(
-                    rect(cell.left + 14.0, cell.bottom - 2.0, tab_width - 28.0, 2.0),
-                    accent,
-                );
-            }
+            ui.text(name, label, 13.5, weight, Align::Left, color)?;
         }
-        ui.g.fill_rect(rect(0.0, TABS_HEIGHT - 8.0, w, 1.0), TRACK);
-
-        let footer = h - FOOTER_HEIGHT;
-        ui.g.fill_rect(rect(0.0, footer, w, 1.0), TRACK);
-        let half = (w - 2.0 * MARGIN - 10.0) / 2.0;
         let label = if status.edit {
             "Done editing"
         } else {
             "Edit layout"
         };
-        let button = rect(MARGIN, footer + 14.0, half, 36.0);
+        let button = rect(12.0, h - 96.0, SIDEBAR - 24.0, 36.0);
         outcome.toggle_edit = ui.button(label, button, status.edit)?;
+        let button = rect(12.0, h - 52.0, SIDEBAR - 24.0, 36.0);
+        outcome.open_config = ui.button("Open config file", button, false)?;
+
+        // The page's title and its sections.
+        let title = rect(ui.left, 20.0, ui.width, 34.0);
+        ui.text(TABS[self.tab], title, 22.0, 700, Align::Left, TEXT)?;
+        let strip = rect(ui.left, 64.0, ui.width, 32.0);
+        ui.g.fill_round(strip, 9.0, TRACK);
+        let cell = ui.width / sections.len() as f32;
+        for (i, name) in sections.iter().enumerate() {
+            let segment = rect(
+                strip.left + cell * i as f32 + 2.0,
+                strip.top + 2.0,
+                cell - 4.0,
+                28.0,
+            );
+            let selected = section == i;
+            if ui.clicked(segment) && !selected {
+                turned_to = Some((self.tab, i));
+            }
+            if selected {
+                ui.g.fill_round(segment, 7.0, with_alpha(PAPER, 0.16));
+            }
+            let (weight, color) = if selected { (600, TEXT) } else { (400, DIM) };
+            ui.text(name, segment, 12.5, weight, Align::Center, color)?;
+        }
+
         outcome.toggle_hidden = ui.toggle_hidden;
         outcome.toggle_autostart = ui.toggle_autostart;
         outcome.quit = ui.quit;
-        outcome.open_config = ui.button(
-            "Open config file",
-            rect(MARGIN + half + 10.0, footer + 14.0, half, 36.0),
-            false,
-        )?;
         outcome.changed = ui.changed;
+        if let Some((tab, section)) = turned_to {
+            ui.picker.open = None;
+            self.tab = tab;
+            self.section[tab] = section;
+            self.scroll = 0.0;
+            outcome.redraw = true;
+        }
 
         let max_scroll = (content_height - (view.1 - view.0)).max(0.0);
         self.max_scroll = max_scroll;
@@ -506,6 +566,9 @@ struct Ui<'a> {
     width: f32,
     /// Top of the next row.
     y: f32,
+    /// A card is open, and its next row is its first.
+    in_card: bool,
+    first: bool,
     mouse: (f32, f32),
     pressed: bool,
     down: bool,
@@ -554,11 +617,91 @@ impl Ui<'_> {
         Ok(())
     }
 
+    /// One icon from Segoe Fluent Icons, centred in `r`.
+    fn glyph(&mut self, glyph: &str, r: D2D_RECT_F, size: f32, color: Rgba) -> Result<()> {
+        let style = TextStyle {
+            font: ICON_FONT,
+            size,
+            weight: 400,
+            align: Align::Center,
+            wrap: false,
+        };
+        let (w, h) = (r.right - r.left, r.bottom - r.top);
+        let layout = self.g.layout(glyph, &style, w, h)?;
+        let height = Gfx::measure(&layout).1;
+        self.g
+            .draw_text(&layout, r.left, r.top + (h - height) / 2.0, color, false);
+        Ok(())
+    }
+
+    /// Starts a card of rows, under a small title when it has one, and ends
+    /// the card before it.
+    fn group(&mut self, title: &str) -> Result<()> {
+        self.end_group();
+        self.y += 14.0;
+        if !title.is_empty() {
+            let line = rect(self.left + 4.0, self.y, self.width - 8.0, 20.0);
+            self.y += 26.0;
+            self.text(title, line, 12.0, 600, Align::Left, DIM)?;
+        }
+        // The rounded top. The rows are square pieces of the same colour.
+        let cap = rect(self.left, self.y, self.width, 2.0 * CARD_RADIUS);
+        self.g.fill_round(cap, CARD_RADIUS, CARD);
+        self.y += CARD_RADIUS;
+        self.in_card = true;
+        self.first = true;
+        Ok(())
+    }
+
+    fn end_group(&mut self) {
+        if !self.in_card {
+            return;
+        }
+        let cap = rect(
+            self.left,
+            self.y - CARD_RADIUS,
+            self.width,
+            2.0 * CARD_RADIUS,
+        );
+        self.g.fill_round(cap, CARD_RADIUS, CARD);
+        self.y += CARD_RADIUS;
+        self.in_card = false;
+    }
+
+    /// Claims the next `height` of the page, painting the card behind it,
+    /// and a line above it when `divided` and not the card's first.
+    /// Returns the part inside the card's sides.
+    fn take(&mut self, height: f32, divided: bool) -> D2D_RECT_F {
+        let top = self.y;
+        self.y += height;
+        if !self.in_card {
+            return rect(self.left, top, self.width, height);
+        }
+        // A pixel over at each end: two pieces that only meet leave a seam
+        // at a fractional scale.
+        self.g
+            .fill_rect(rect(self.left, top - 1.0, self.width, height + 2.0), CARD);
+        let inner = rect(
+            self.left + CARD_INSET,
+            top,
+            self.width - 2.0 * CARD_INSET,
+            height,
+        );
+        if divided && !self.first {
+            self.g.fill_rect(
+                rect(inner.left, top, inner.right - inner.left, 1.0),
+                HAIRLINE,
+            );
+        }
+        self.first = false;
+        inner
+    }
+
     /// Claims the next row. Returns the whole row and the control's part of it.
     fn row(&mut self, label: &str, height: f32) -> Result<(D2D_RECT_F, D2D_RECT_F)> {
-        let row = rect(self.left, self.y, self.width, height);
-        self.y += height;
-        let label_width = self.width * (1.0 - CONTROL_SHARE);
+        let row = self.take(height, true);
+        let width = row.right - row.left;
+        let label_width = width * (1.0 - CONTROL_SHARE);
         self.text(
             label,
             rect(row.left, row.top, label_width - 8.0, ROW),
@@ -567,27 +710,8 @@ impl Ui<'_> {
             Align::Left,
             TEXT,
         )?;
-        let control = rect(
-            row.left + label_width,
-            row.top,
-            self.width - label_width,
-            height,
-        );
+        let control = rect(row.left + label_width, row.top, width - label_width, height);
         Ok((row, control))
-    }
-
-    fn header(&mut self, title: &str) -> Result<()> {
-        self.y += 10.0;
-        let r = rect(self.left, self.y, self.width, 26.0);
-        self.y += 28.0;
-        self.text(
-            &title.to_uppercase(),
-            r,
-            11.0,
-            700,
-            Align::Left,
-            self.accent,
-        )
     }
 
     fn button(&mut self, label: &str, r: D2D_RECT_F, lit: bool) -> Result<bool> {
@@ -632,6 +756,18 @@ impl Ui<'_> {
         max: f32,
         step: f32,
     ) -> Result<()> {
+        self.slider_with(label, value, (min, max, step), false)
+    }
+
+    /// The slider itself. With `quarters` it is notched at every quarter of
+    /// its range, and the knob jumps onto a notch it is dragged near.
+    fn slider_with(
+        &mut self,
+        label: &str,
+        value: &mut f32,
+        (min, max, step): (f32, f32, f32),
+        quarters: bool,
+    ) -> Result<()> {
         let id = self.next_id;
         self.next_id += 1;
         let (row, control) = self.row(label, ROW)?;
@@ -642,19 +778,19 @@ impl Ui<'_> {
             control.right - control.left - 56.0,
             4.0,
         );
-        let grab = rect(
-            track.left - 8.0,
-            row.top,
-            track.right - track.left + 16.0,
-            ROW,
-        );
+        let length = track.right - track.left;
+        let grab = rect(track.left - 8.0, row.top, length + 16.0, ROW);
 
         if self.pressed && self.active.is_none() && self.hot(grab) {
             *self.active = Some(id);
         }
         if *self.active == Some(id) {
             if self.down || self.released {
-                let t = ((self.mouse.0 - track.left) / (track.right - track.left)).clamp(0.0, 1.0);
+                let mut t = ((self.mouse.0 - track.left) / length).clamp(0.0, 1.0);
+                let notch = (t * 4.0).round() / 4.0;
+                if quarters && ((t - notch) * length).abs() <= SNAP_REACH {
+                    t = notch;
+                }
                 let snapped = (min + ((max - min) * t / step).round() * step).clamp(min, max);
                 if snapped != *value {
                     *value = snapped;
@@ -667,7 +803,13 @@ impl Ui<'_> {
         }
 
         let t = ((*value - min) / (max - min)).clamp(0.0, 1.0);
-        let knob = track.left + (track.right - track.left) * t;
+        let knob = track.left + length * t;
+        if quarters {
+            for quarter in 0..=4 {
+                let x = track.left + length * quarter as f32 / 4.0;
+                self.g.fill_rect(rect(x - 1.0, mid - 7.0, 2.0, 14.0), TRACK);
+            }
+        }
         self.g.fill_round(track, 2.0, TRACK);
         self.g.fill_round(
             rect(track.left, track.top, knob - track.left, 4.0),
@@ -851,16 +993,16 @@ impl Ui<'_> {
     /// hue, and a hex field that takes typing.
     fn picker_body(&mut self, id: u32, value: &mut String) -> Result<()> {
         let (width, height) = PICKER_SQUARE;
-        let top = self.y + 2.0;
-        let square = rect(self.left, top, width, height);
-        let bar = rect(self.left, top + height + 10.0, width, HUE_BAR_HEIGHT);
+        let body = self.take(height + HUE_BAR_HEIGHT + 26.0, false);
+        let top = body.top + 2.0;
+        let square = rect(body.left, top, width, height);
+        let bar = rect(body.left, top + height + 10.0, width, HUE_BAR_HEIGHT);
         let field = rect(
-            self.left + width + 18.0,
+            body.left + width + 18.0,
             top,
-            self.width - width - 18.0,
+            body.right - body.left - width - 18.0,
             34.0,
         );
-        self.y = bar.bottom + 14.0;
 
         // Dragging in the square or along the bar.
         let (mx, my) = self.mouse;
@@ -994,8 +1136,57 @@ impl Ui<'_> {
         self.choice_text(label, value, &options)
     }
 
-    /// Every setting of one piece of text.
-    fn label_rows(&mut self, label: &mut Label) -> Result<()> {
+    /// Where something sits on the screen, in the display's own pixels,
+    /// notched at every quarter of the screen. `x` and `y` are measured
+    /// from the corner of `frame`, the widget the thing belongs to.
+    fn position(&mut self, frame: Frame, x: &mut f32, y: &mut f32) -> Result<()> {
+        let scale = self.status.scale;
+        let (left, top) = frame.origin(self.area.0, self.area.1);
+        let axes = [
+            ("Across (px)", x, left, self.area.0),
+            ("Down (px)", y, top, self.area.1),
+        ];
+        for (label, value, origin, extent) in axes {
+            let mut px = ((origin as f32 + *value) * scale).round();
+            let before = px;
+            let range = (0.0, (extent as f32 * scale).round(), 1.0);
+            self.slider_with(label, &mut px, range, true)?;
+            if px != before {
+                *value = px / scale - origin as f32;
+            }
+        }
+        Ok(())
+    }
+
+    /// The same two sliders for a widget with a frame of its own: they move
+    /// its top-left corner. `across` is false for one that spans the screen.
+    fn frame_position(&mut self, frame: &mut Frame, across: bool) -> Result<()> {
+        let scale = self.status.scale;
+        let (area_w, area_h) = self.area;
+        let (left, top) = frame.origin(area_w, area_h);
+        let (mut x, mut y) = ((left as f32 * scale).round(), (top as f32 * scale).round());
+        let before = (x, y);
+        if across {
+            let range = (0.0, (area_w as f32 * scale).round(), 1.0);
+            self.slider_with("Across (px)", &mut x, range, true)?;
+        }
+        let range = (0.0, (area_h as f32 * scale).round(), 1.0);
+        self.slider_with("Down (px)", &mut y, range, true)?;
+        if (x, y) != before {
+            let (left, top) = ((x / scale).round() as i32, (y / scale).round() as i32);
+            frame.set_origin(left, top, area_w, area_h);
+        }
+        Ok(())
+    }
+
+    /// Every setting of one piece of text: where, how it looks, which way
+    /// it runs.
+    fn label_page(&mut self, frame: Frame, label: &mut Label) -> Result<()> {
+        self.group("Position")?;
+        self.position(frame, &mut label.x, &mut label.y)?;
+        self.choice("Grows from its", &mut label.align, &ALIGNS)?;
+
+        self.group("Text")?;
         self.font_row("Font", &mut label.font)?;
         self.slider("Size", &mut label.size, 6.0, 240.0, 1.0)?;
         self.slider_u32("Weight", &mut label.weight, 100, 900, 100)?;
@@ -1003,9 +1194,10 @@ impl Ui<'_> {
         self.slider("Opacity", &mut label.opacity, 0.0, 1.0, 0.02)?;
         self.slider("Letter spacing", &mut label.spacing, 0.0, 1.0, 0.02)?;
         self.toggle("Capitals", &mut label.uppercase)?;
+
+        self.group("Direction")?;
         self.choice("Runs", &mut label.direction, &DIRECTIONS)?;
-        self.choice("Letters", &mut label.letters, &LETTERS)?;
-        self.choice("Grows from its", &mut label.align, &ALIGNS)
+        self.choice("Letters", &mut label.letters, &LETTERS)
     }
 
     /// A labelled row with one button. Returns whether it was clicked.
@@ -1022,296 +1214,339 @@ impl Ui<'_> {
 
     /// A line of small print.
     fn note(&mut self, text: &str) -> Result<()> {
-        let line = rect(self.left, self.y, self.width, 22.0);
-        self.y += 26.0;
+        let line = self.take(28.0, false);
+        let line = rect(line.left, line.top, line.right - line.left, 24.0);
         self.text(text, line, 12.0, 400, Align::Left, DIM)
     }
+}
 
-    /// The rows every widget shares: where it sits and how solid it is.
-    fn placement(
-        &mut self,
-        kind: Kind,
-        cfg: &mut Config,
-        opacity: fn(&mut Config) -> &mut f32,
-    ) -> Result<()> {
-        self.header("Placement")?;
-        let frame = kind.frame_mut(cfg);
-        let before = frame.origin(self.area.0, self.area.1);
-        let mut anchor = frame.anchor;
-        self.choice("Measured from", &mut anchor, &ANCHORS)?;
-        if anchor != frame.anchor {
-            // Keep the widget where it is; only what its offsets mean changes.
-            frame.anchor = anchor;
-            frame.set_origin(before.0, before.1, self.area.0, self.area.1);
+fn general(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
+    match section {
+        0 => {
+            ui.group("Looks")?;
+            let strip = ui.take(46.0, false);
+            let width = (strip.right - strip.left - 30.0) / 4.0;
+            for (i, preset) in Preset::ALL.into_iter().enumerate() {
+                let left = strip.left + (width + 10.0) * i as f32;
+                let button = rect(left, strip.top + 6.0, width, 34.0);
+                if ui.button(preset.name(), button, false)? {
+                    cfg.apply_preset(preset);
+                    ui.changed = true;
+                }
+            }
+
+            ui.group("Theme")?;
+            let theme = &mut cfg.theme;
+            ui.choice_text("Font", &mut theme.font, &FONTS)?;
+            ui.color("Accent", &mut theme.accent, &[("auto", "Album")])?;
+            ui.color("Text", &mut theme.text, &[])?;
+            ui.toggle("Shadow under text", &mut theme.text_shadow)?;
+
+            ui.group("Cards behind widgets")?;
+            ui.color("Colour", &mut theme.card_color, &[])?;
+            ui.slider("Opacity", &mut theme.card_opacity, 0.0, 1.0, 0.02)?;
+            ui.slider("Corner", &mut theme.card_radius, 0.0, 40.0, 1.0)?;
+            ui.slider("Border", &mut theme.card_border, 0.0, 0.5, 0.01)
         }
-        // The clock and the player are as big as their elements make them.
-        if !kind.fitted() {
-            // Up to the size of the screen itself.
-            let (max_w, max_h) = (self.area.0.max(80) as u32, self.area.1.max(40) as u32);
-            self.slider_u32("Width", &mut frame.w, 80, max_w, 10)?;
-            self.slider_u32("Height", &mut frame.h, 40, max_h, 10)?;
+        1 => {
+            ui.group("")?;
+            let general = &mut cfg.general;
+            ui.choice(
+                "Layer",
+                &mut general.layer,
+                &[
+                    (Layer::Desktop, "On the desktop"),
+                    (Layer::Normal, "Normal window"),
+                    (Layer::Top, "Always on top"),
+                ],
+            )?;
+            ui.toggle(
+                "Pause behind fullscreen apps",
+                &mut general.pause_on_fullscreen,
+            )?;
+            ui.toggle(
+                "Hide when Spotify is closed",
+                &mut general.hide_without_spotify,
+            )?;
+            ui.toggle("Global hotkeys", &mut general.hotkeys)
         }
-        self.slider("Opacity", opacity(cfg), 0.0, 1.0, 0.05)
+        _ => {
+            ui.group("")?;
+            let (mut hidden, mut autostart) = (ui.status.hidden, ui.status.autostart);
+            ui.toggle("Hide all widgets", &mut hidden)?;
+            ui.toggle("Start with Windows", &mut autostart)?;
+            ui.toggle_hidden = hidden != ui.status.hidden;
+            ui.toggle_autostart = autostart != ui.status.autostart;
+            if ui.action("Deskbeat", "Quit")? {
+                ui.quit = true;
+            }
+            Ok(())
+        }
     }
 }
 
-fn general(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
-    ui.header("Looks")?;
-    let width = (ui.width - 30.0) / 4.0;
-    for (i, preset) in Preset::ALL.into_iter().enumerate() {
-        let button = rect(ui.left + (width + 10.0) * i as f32, ui.y, width, 34.0);
-        if ui.button(preset.name(), button, false)? {
-            cfg.apply_preset(preset);
-            ui.changed = true;
-        }
-    }
-    ui.y += 42.0;
-
-    ui.header("Theme")?;
-    let theme = &mut cfg.theme;
-    ui.choice_text("Font", &mut theme.font, &FONTS)?;
-    ui.color("Accent", &mut theme.accent, &[("auto", "Album")])?;
-    ui.color("Text", &mut theme.text, &[])?;
-    ui.color("Card", &mut theme.card_color, &[])?;
-    ui.slider("Card opacity", &mut theme.card_opacity, 0.0, 1.0, 0.02)?;
-    ui.slider("Card corner", &mut theme.card_radius, 0.0, 40.0, 1.0)?;
-    ui.slider("Card border", &mut theme.card_border, 0.0, 0.5, 0.01)?;
-    ui.toggle("Shadow under text", &mut theme.text_shadow)?;
-
-    ui.header("Behaviour")?;
-    let general = &mut cfg.general;
-    ui.choice(
-        "Layer",
-        &mut general.layer,
-        &[
-            (Layer::Desktop, "On the desktop"),
-            (Layer::Normal, "Normal window"),
-            (Layer::Top, "Always on top"),
-        ],
-    )?;
-    ui.toggle(
-        "Pause behind fullscreen apps",
-        &mut general.pause_on_fullscreen,
-    )?;
-    ui.toggle(
-        "Hide when Spotify is closed",
-        &mut general.hide_without_spotify,
-    )?;
-    ui.toggle("Global hotkeys", &mut general.hotkeys)?;
-
-    // The tray icon has no menu, so what a menu would hold lives here.
-    ui.header("App")?;
-    let (mut hidden, mut autostart) = (ui.status.hidden, ui.status.autostart);
-    ui.toggle("Hide all widgets", &mut hidden)?;
-    ui.toggle("Start with Windows", &mut autostart)?;
-    ui.toggle_hidden = hidden != ui.status.hidden;
-    ui.toggle_autostart = autostart != ui.status.autostart;
-    if ui.action("Deskbeat", "Quit")? {
-        ui.quit = true;
-    }
-    Ok(())
-}
-
-fn clock(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
-    ui.header("Clock")?;
+fn clock(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
     let c = &mut cfg.clock;
-    ui.toggle("Show", &mut c.enabled)?;
-    ui.toggle("Card behind it", &mut c.card)?;
-    ui.note("In Edit layout, drag the day, time and date separately.")?;
-    if ui.action("Positions", "Reset")? {
-        c.reset_positions();
-        ui.changed = true;
-    }
-
-    ui.header("Day")?;
-    ui.toggle("Show", &mut c.show_day)?;
-    ui.choice_text("Shows", &mut c.day_format, &DAY_FORMATS)?;
-    ui.label_rows(&mut c.day)?;
-
-    ui.header("Time")?;
-    ui.toggle("Show", &mut c.show_time)?;
-    ui.choice_text("Shows", &mut c.time_format, &TIME_FORMATS)?;
-    ui.label_rows(&mut c.time)?;
-
-    ui.header("Date")?;
-    ui.toggle("Show", &mut c.show_date)?;
-    ui.choice_text("Shows", &mut c.date_format, &DATE_FORMATS)?;
-    ui.label_rows(&mut c.date)?;
-
-    ui.placement(Kind::Clock, cfg, |cfg| &mut cfg.clock.opacity)
+    let frame = c.frame;
+    ui.group("")?;
+    let (show, format, formats, label) = match section {
+        0 => {
+            ui.toggle("Show", &mut c.enabled)?;
+            ui.toggle("Card behind it", &mut c.card)?;
+            ui.slider("Opacity", &mut c.opacity, 0.0, 1.0, 0.05)?;
+            if ui.action("Day, time and date", "Put back in place")? {
+                c.reset_positions();
+                ui.changed = true;
+            }
+            return Ok(());
+        }
+        1 => (
+            &mut c.show_day,
+            &mut c.day_format,
+            &DAY_FORMATS[..],
+            &mut c.day,
+        ),
+        2 => (
+            &mut c.show_time,
+            &mut c.time_format,
+            &TIME_FORMATS[..],
+            &mut c.time,
+        ),
+        _ => (
+            &mut c.show_date,
+            &mut c.date_format,
+            &DATE_FORMATS[..],
+            &mut c.date,
+        ),
+    };
+    ui.toggle("Show", show)?;
+    ui.choice_text("Shows", format, formats)?;
+    ui.label_page(frame, label)
 }
 
-fn player(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
-    ui.header("Player")?;
+fn player(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
     let p = &mut cfg.player;
-    ui.toggle("Show", &mut p.enabled)?;
-    ui.choice(
-        "Background",
-        &mut p.background,
-        &[
-            (PlayerBackground::ArtBlur, "Blurred album art"),
-            (PlayerBackground::Card, "Card"),
-            (PlayerBackground::None, "None"),
-        ],
-    )?;
+    let frame = p.frame;
+    match section {
+        0 => {
+            ui.group("")?;
+            ui.toggle("Show", &mut p.enabled)?;
+            ui.choice(
+                "Background",
+                &mut p.background,
+                &[
+                    (PlayerBackground::ArtBlur, "Blurred album art"),
+                    (PlayerBackground::Card, "Card"),
+                    (PlayerBackground::None, "None"),
+                ],
+            )?;
+            ui.slider("Opacity", &mut p.opacity, 0.0, 1.0, 0.05)?;
 
-    ui.header("Arrangement")?;
-    ui.note("In Edit layout, drag any element on its own.")?;
-    for (layout, label) in [
-        (PlayerLayout::Row, "Art on the left"),
-        (PlayerLayout::Centered, "Centred stack"),
-    ] {
-        if ui.action(label, "Arrange")? {
-            p.arrange(layout);
-            ui.changed = true;
+            ui.group("Arrange everything at once")?;
+            for (layout, label) in [
+                (PlayerLayout::Row, "Art on the left"),
+                (PlayerLayout::Centered, "Centred stack"),
+            ] {
+                if ui.action(label, "Arrange")? {
+                    p.arrange(layout);
+                    ui.changed = true;
+                }
+            }
+            Ok(())
+        }
+        1 => {
+            ui.group("")?;
+            ui.toggle("Show", &mut p.show_art)?;
+            ui.slider("Size", &mut p.art_size, 16.0, 600.0, 2.0)?;
+            ui.slider("Corner rounding", &mut p.art_radius, 0.0, 0.5, 0.02)?;
+            ui.group("Position")?;
+            ui.position(frame, &mut p.art.x, &mut p.art.y)
+        }
+        2 => {
+            ui.group("")?;
+            ui.toggle("Song name only", &mut p.short_title)?;
+            ui.note("Leaves out the version, the credits and the film.")?;
+            ui.label_page(frame, &mut p.title)
+        }
+        3 => {
+            ui.group("")?;
+            ui.slider(
+                "Room before it is cut",
+                &mut p.text_width,
+                60.0,
+                1200.0,
+                10.0,
+            )?;
+            ui.label_page(frame, &mut p.artist)
+        }
+        4 => {
+            ui.group("")?;
+            ui.toggle("Show", &mut p.show_controls)?;
+            ui.slider("Size", &mut p.button_size, 14.0, 120.0, 1.0)?;
+            ui.color("Colour", &mut p.button_color, &THEME_COLORS)?;
+            for (name, spot) in [
+                ("Previous", &mut p.previous),
+                ("Play and pause", &mut p.play),
+                ("Next", &mut p.next),
+            ] {
+                ui.group(name)?;
+                ui.position(frame, &mut spot.x, &mut spot.y)?;
+            }
+            Ok(())
+        }
+        5 => {
+            ui.group("")?;
+            ui.toggle("Show bar and times", &mut p.show_progress)?;
+            ui.slider("Length", &mut p.bar_width, 20.0, 1200.0, 2.0)?;
+            ui.slider("Thickness", &mut p.bar_height, 1.0, 40.0, 1.0)?;
+            ui.color("Colour", &mut p.bar_color, &THEME_COLORS)?;
+            ui.slider("Unplayed part", &mut p.bar_track_opacity, 0.0, 1.0, 0.02)?;
+            ui.group("Position")?;
+            ui.position(frame, &mut p.bar.x, &mut p.bar.y)
+        }
+        6 => ui.label_page(frame, &mut p.elapsed),
+        _ => ui.label_page(frame, &mut p.total),
+    }
+}
+
+fn lyrics(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
+    let l = &mut cfg.lyrics;
+    match section {
+        0 => {
+            ui.group("")?;
+            ui.toggle("Show", &mut l.enabled)?;
+            ui.choice(
+                "Follows the song",
+                &mut l.mode,
+                &[
+                    (LyricsMode::Line, "Line by line"),
+                    (LyricsMode::Word, "Word by word"),
+                    (LyricsMode::Progress, "Line progress"),
+                ],
+            )?;
+            ui.note("Word by word needs a song with timed words; others go line by line.")?;
+            ui.toggle("Card behind them", &mut l.card)?;
+            ui.slider("Opacity", &mut l.opacity, 0.0, 1.0, 0.05)?;
+
+            ui.group("Position and size")?;
+            ui.frame_position(&mut l.frame, true)?;
+            let (max_w, max_h) = (ui.area.0.max(80) as u32, ui.area.1.max(40) as u32);
+            ui.slider_u32("Width", &mut l.frame.w, 80, max_w, 10)?;
+            ui.slider_u32("Height", &mut l.frame.h, 40, max_h, 10)
+        }
+        1 => {
+            ui.group("")?;
+            ui.choice("Align", &mut l.align, &ALIGNS)?;
+            ui.font_row("Font", &mut l.font)?;
+            ui.slider("Size", &mut l.size, 12.0, 96.0, 1.0)?;
+            ui.slider_u32("Weight", &mut l.weight, 100, 900, 100)?;
+            ui.slider("Current line size", &mut l.active_scale, 1.0, 1.6, 0.02)?;
+
+            ui.group("Lines")?;
+            ui.slider_u32("Above", &mut l.lines_before, 0, 6, 1)?;
+            ui.slider_u32("Below", &mut l.lines_after, 0, 6, 1)?;
+            ui.slider("Spacing", &mut l.line_gap, 0.0, 2.0, 0.05)?;
+            ui.slider("Fade with distance", &mut l.falloff, 0.0, 0.9, 0.05)
+        }
+        2 => {
+            ui.group("Current line")?;
+            ui.color("Colour", &mut l.active_color, &THEME_COLORS)?;
+            ui.color("Word being sung", &mut l.word_color, &THEME_COLORS)?;
+            ui.slider("Unsung part", &mut l.unsung_opacity, 0.0, 1.0, 0.02)?;
+
+            ui.group("Other lines")?;
+            ui.color("Colour", &mut l.inactive_color, &THEME_COLORS)?;
+            ui.slider("Opacity", &mut l.inactive_opacity, 0.0, 1.0, 0.02)?;
+
+            ui.group("Outline and shadow")?;
+            ui.slider("Outline width", &mut l.stroke_width, 0.0, 6.0, 0.5)?;
+            ui.color("Outline colour", &mut l.stroke_color, &[])?;
+            ui.slider("Shadow strength", &mut l.shadow_opacity, 0.0, 1.0, 0.02)?;
+            ui.color("Shadow colour", &mut l.shadow_color, &[])
+        }
+        _ => {
+            ui.group("")?;
+            let mut offset = l.offset_ms as f32;
+            ui.slider("Show earlier (ms)", &mut offset, -3000.0, 3000.0, 50.0)?;
+            l.offset_ms = offset as i32;
+            ui.slider_u32("Scroll time (ms)", &mut l.scroll_ms, 0, 1000, 20)
         }
     }
-
-    ui.header("Album art")?;
-    ui.toggle("Show", &mut p.show_art)?;
-    ui.slider("Size", &mut p.art_size, 16.0, 600.0, 2.0)?;
-    ui.slider("Corner rounding", &mut p.art_radius, 0.0, 0.5, 0.02)?;
-
-    ui.header("Progress bar")?;
-    ui.toggle("Show bar and times", &mut p.show_progress)?;
-    ui.slider("Length", &mut p.bar_width, 20.0, 1200.0, 2.0)?;
-    ui.slider("Thickness", &mut p.bar_height, 1.0, 40.0, 1.0)?;
-    ui.color("Colour", &mut p.bar_color, &THEME_COLORS)?;
-    ui.slider("Unplayed part", &mut p.bar_track_opacity, 0.0, 1.0, 0.02)?;
-
-    ui.header("Buttons")?;
-    ui.toggle("Show", &mut p.show_controls)?;
-    ui.slider("Size", &mut p.button_size, 14.0, 120.0, 1.0)?;
-    ui.color("Colour", &mut p.button_color, &THEME_COLORS)?;
-
-    ui.header("Title")?;
-    ui.label_rows(&mut p.title)?;
-    ui.header("Artist")?;
-    ui.label_rows(&mut p.artist)?;
-    ui.slider(
-        "Room for title and artist",
-        &mut p.text_width,
-        60.0,
-        1200.0,
-        10.0,
-    )?;
-    ui.header("Time played")?;
-    ui.label_rows(&mut p.elapsed)?;
-    ui.header("Track length")?;
-    ui.label_rows(&mut p.total)?;
-
-    ui.placement(Kind::Player, cfg, |cfg| &mut cfg.player.opacity)
 }
 
-fn lyrics(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
-    ui.header("Lyrics")?;
-    let l = &mut cfg.lyrics;
-    ui.toggle("Show", &mut l.enabled)?;
-    ui.toggle("Card behind them", &mut l.card)?;
-    ui.choice(
-        "Highlight",
-        &mut l.mode,
-        &[
-            (LyricsMode::Line, "Line by line"),
-            (LyricsMode::Word, "Word by word"),
-            (LyricsMode::Progress, "Line progress"),
-        ],
-    )?;
-    ui.choice("Align", &mut l.align, &ALIGNS)?;
-    ui.font_row("Font", &mut l.font)?;
-    ui.slider("Text size", &mut l.size, 12.0, 96.0, 1.0)?;
-    ui.slider_u32("Weight", &mut l.weight, 100, 900, 100)?;
-    ui.slider_u32("Lines above", &mut l.lines_before, 0, 6, 1)?;
-    ui.slider_u32("Lines below", &mut l.lines_after, 0, 6, 1)?;
-    ui.slider("Line spacing", &mut l.line_gap, 0.0, 2.0, 0.05)?;
-    ui.slider("Current line size", &mut l.active_scale, 1.0, 1.6, 0.02)?;
-    ui.slider("Fade with distance", &mut l.falloff, 0.0, 0.9, 0.05)?;
-
-    ui.header("Colours")?;
-    ui.color("Current line", &mut l.active_color, &THEME_COLORS)?;
-    ui.color("Current word", &mut l.word_color, &THEME_COLORS)?;
-    ui.slider(
-        "Unsung words opacity",
-        &mut l.unsung_opacity,
-        0.0,
-        1.0,
-        0.02,
-    )?;
-    ui.color("Other lines", &mut l.inactive_color, &THEME_COLORS)?;
-    ui.slider(
-        "Other lines opacity",
-        &mut l.inactive_opacity,
-        0.0,
-        1.0,
-        0.02,
-    )?;
-
-    ui.header("Outline and shadow")?;
-    ui.slider("Outline width", &mut l.stroke_width, 0.0, 6.0, 0.5)?;
-    ui.color("Outline colour", &mut l.stroke_color, &[])?;
-    ui.slider("Shadow strength", &mut l.shadow_opacity, 0.0, 1.0, 0.02)?;
-    ui.color("Shadow colour", &mut l.shadow_color, &[])?;
-
-    ui.header("Timing")?;
-    let mut offset = l.offset_ms as f32;
-    ui.slider("Show earlier (ms)", &mut offset, -3000.0, 3000.0, 50.0)?;
-    l.offset_ms = offset as i32;
-    ui.slider_u32("Scroll time (ms)", &mut l.scroll_ms, 0, 1000, 20)?;
-    ui.placement(Kind::Lyrics, cfg, |cfg| &mut cfg.lyrics.opacity)
-}
-
-fn visualizer(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
-    ui.header("Visualizer")?;
+fn visualizer(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
     let v = &mut cfg.visualizer;
-    ui.toggle("Show", &mut v.enabled)?;
-    ui.toggle("Card behind it", &mut v.card)?;
-    ui.choice(
-        "Style",
-        &mut v.style,
-        &[
-            (VisualizerStyle::Bars, "Bars"),
-            (VisualizerStyle::Mirror, "Mirrored bars"),
-            (VisualizerStyle::Wave, "Wave"),
-        ],
-    )?;
-    ui.choice(
-        "Listens to",
-        &mut v.source,
-        &[
-            (AudioSource::Spotify, "Spotify only"),
-            (AudioSource::System, "Everything"),
-        ],
-    )?;
-    ui.toggle("Span the whole screen", &mut v.full_width)?;
-    ui.slider_u32("Bars", &mut v.bars, 4, MAX_BARS, 1)?;
-    ui.slider("Gap", &mut v.gap, 0.0, 0.9, 0.02)?;
-    ui.slider("Roundness", &mut v.radius, 0.0, 0.5, 0.05)?;
-    ui.toggle("Bass in the middle", &mut v.symmetric)?;
-    ui.toggle("Flip left to right", &mut v.flip_x)?;
-    ui.toggle("Flip upside down", &mut v.flip_y)?;
+    match section {
+        0 => {
+            ui.group("")?;
+            ui.toggle("Show", &mut v.enabled)?;
+            ui.choice(
+                "Listens to",
+                &mut v.source,
+                &[
+                    (AudioSource::Spotify, "Spotify only"),
+                    (AudioSource::System, "Everything"),
+                ],
+            )?;
+            ui.toggle("Card behind it", &mut v.card)?;
+            ui.slider("Opacity", &mut v.opacity, 0.0, 1.0, 0.05)?;
 
-    ui.header("Colour")?;
-    ui.choice(
-        "Colour",
-        &mut v.color,
-        &[
-            (VisualizerColor::Accent, "Accent"),
-            (VisualizerColor::Solid, "One colour"),
-            (VisualizerColor::Gradient, "Gradient"),
-        ],
-    )?;
-    ui.color("First colour", &mut v.color_a, &[])?;
-    ui.color("Second colour", &mut v.color_b, &[])?;
+            ui.group("Position and size")?;
+            ui.toggle("Span the whole screen", &mut v.full_width)?;
+            ui.frame_position(&mut v.frame, !v.full_width)?;
+            let (max_w, max_h) = (ui.area.0.max(80) as u32, ui.area.1.max(40) as u32);
+            if !v.full_width {
+                ui.slider_u32("Width", &mut v.frame.w, 80, max_w, 10)?;
+            }
+            ui.slider_u32("Height", &mut v.frame.h, 40, max_h, 10)
+        }
+        1 => {
+            ui.group("")?;
+            ui.choice(
+                "Style",
+                &mut v.style,
+                &[
+                    (VisualizerStyle::Bars, "Bars"),
+                    (VisualizerStyle::Mirror, "Mirrored bars"),
+                    (VisualizerStyle::Wave, "Wave"),
+                ],
+            )?;
+            ui.slider_u32("Bars", &mut v.bars, 4, MAX_BARS, 1)?;
+            ui.slider("Gap", &mut v.gap, 0.0, 0.9, 0.02)?;
+            ui.slider("Roundness", &mut v.radius, 0.0, 0.5, 0.05)?;
 
-    ui.header("Motion")?;
-    ui.slider("Sensitivity (dB)", &mut v.sensitivity, -20.0, 30.0, 1.0)?;
-    ui.slider("Rise (ms)", &mut v.attack_ms, 0.0, 200.0, 2.0)?;
-    ui.slider("Fall (ms)", &mut v.decay_ms, 20.0, 1000.0, 10.0)?;
-    ui.slider_u32("Frames per second", &mut v.fps, 15, 144, 1)?;
-    ui.slider("Treble boost", &mut v.tilt, 0.0, 9.0, 0.5)?;
-    ui.slider("Lowest pitch (Hz)", &mut v.min_hz, 20.0, 500.0, 10.0)?;
-    ui.slider("Highest pitch (Hz)", &mut v.max_hz, 4000.0, 20_000.0, 500.0)?;
-    ui.placement(Kind::Visualizer, cfg, |cfg| &mut cfg.visualizer.opacity)
+            ui.group("Order")?;
+            ui.toggle("Bass in the middle", &mut v.symmetric)?;
+            ui.toggle("Flip left to right", &mut v.flip_x)?;
+            ui.toggle("Flip upside down", &mut v.flip_y)
+        }
+        2 => {
+            ui.group("")?;
+            ui.choice(
+                "Coloured by",
+                &mut v.color,
+                &[
+                    (VisualizerColor::Accent, "Accent"),
+                    (VisualizerColor::Solid, "One colour"),
+                    (VisualizerColor::Gradient, "Gradient"),
+                ],
+            )?;
+            ui.color("First colour", &mut v.color_a, &[])?;
+            ui.color("Second colour", &mut v.color_b, &[])
+        }
+        _ => {
+            ui.group("")?;
+            ui.slider("Sensitivity (dB)", &mut v.sensitivity, -20.0, 30.0, 1.0)?;
+            ui.slider("Rise (ms)", &mut v.attack_ms, 0.0, 200.0, 2.0)?;
+            ui.slider("Fall (ms)", &mut v.decay_ms, 20.0, 1000.0, 10.0)?;
+            ui.slider_u32("Frames per second", &mut v.fps, 15, 144, 1)?;
+
+            ui.group("Pitch")?;
+            ui.slider("Treble boost", &mut v.tilt, 0.0, 9.0, 0.5)?;
+            ui.slider("Lowest (Hz)", &mut v.min_hz, 20.0, 500.0, 10.0)?;
+            ui.slider("Highest (Hz)", &mut v.max_hz, 4000.0, 20_000.0, 500.0)
+        }
+    }
 }
 
 #[cfg(test)]

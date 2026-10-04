@@ -608,6 +608,7 @@ impl App {
             edit: self.edit,
             hidden: self.hidden,
             autostart: self.autostart,
+            scale: self.scale,
         };
         let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, EMBER, status, area);
         let outcome = match drawn {
