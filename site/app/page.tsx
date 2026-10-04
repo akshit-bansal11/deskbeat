@@ -63,7 +63,7 @@ const WIDGETS: { title: string; Icon: LucideIcon; body: string }[] = [
   {
     title: "Every detail is a setting",
     Icon: SlidersHorizontal,
-    body: "Four one-click looks, then a font, size, weight, colour, opacity, letter spacing and capitals setting for every piece of text. Everything is stored in one TOML file that reloads when you save it.",
+    body: "Four one-click looks, then a font, size, weight, colour, opacity, letter spacing and capitals setting for every piece of text. Each can also run across, down or up, with its letters upright or lying sideways. Everything is stored in one TOML file that reloads when you save it.",
   },
 ];
 
@@ -100,7 +100,7 @@ const LIMITS: string[] = [
 const INSTALL: string[] = [
   "Download Deskbeat-<version>.exe from the latest release. There is no installer.",
   "Run it. SmartScreen asks first: More info, then Run anyway.",
-  "It lives in the notification area. Double-click its icon for settings.",
+  "It lives in the notification area. Double-click its icon for settings, or right-click it for a small menu.",
   "Play something in the Spotify desktop app.",
 ];
 

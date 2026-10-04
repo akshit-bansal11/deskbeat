@@ -103,10 +103,10 @@ const TESTED: string[] = [
 // Summaries of CHANGELOG.md, one per section, in its order.
 const HISTORY: { version: string; date: string; summary: string }[] = [
   {
-    version: "Unreleased",
-    date: "in the repository, not yet in a release",
+    version: "1.1.0",
+    date: "2026-10-04",
     summary:
-      "A new mark: four sound bars, centred like a waveform, that draw the letter D, in the README and the tray icon. In edit layout every element of the clock and the player moves alone, and Shift+click moves several as one; dragging one element no longer makes the others jump or shimmer.",
+      "Any text of the clock and the player can run across, down or up, with its letters upright or lying sideways. A menu on a right-click of the tray icon: the name and version, a link to the repository, the start-with-Windows switch and Quit. A website, with the documentation on one page. A new mark, four sound bars that draw the letter D, in the three colours everything of the app's own now uses: ink, paper and one accent; the tray icon, the tray menu and the settings panel use the same three. In edit layout every element of the clock and the player moves alone, and Shift+click moves several as one; dragging one element no longer makes the others jump or shimmer.",
   },
   {
     version: "1.0.1",

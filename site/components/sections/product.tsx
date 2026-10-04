@@ -65,12 +65,12 @@ const PANEL: { tab: string; covers: string }[] = [
   {
     tab: "Clock",
     covers:
-      "Show it, put a card behind it, reset its positions. For each of the day, the time and the date: show it, pick what it shows, and its font, size, weight, colour, opacity, letter spacing and capitals.",
+      "Show it, put a card behind it, reset its positions. For each of the day, the time and the date: show it, pick what it shows, and its font, size, weight, colour, opacity, letter spacing and capitals, which way it runs (across, down or up) and whether its letters stand upright or lie sideways.",
   },
   {
     tab: "Player",
     covers:
-      "Show it, and its background: blurred album art, a card, or none. Two ready-made arrangements, Art on the left and Centred stack. Album art size and corner rounding. The progress bar's length, thickness, colour and unplayed part. The buttons' size and colour. The title, artist, time played and track length, each styled like any other text.",
+      "Show it, and its background: blurred album art, a card, or none. Two ready-made arrangements, Art on the left and Centred stack. Album art size and corner rounding. The progress bar's length, thickness, colour and unplayed part. The buttons' size and colour. The title, artist, time played and track length, each styled like any other text, with the same Runs and Letters rows.",
   },
   {
     tab: "Lyrics",
@@ -121,7 +121,19 @@ const CONFIG: { key: string; value: string; means: string }[] = [
     key: "clock.day.size",
     value: "34.0",
     means:
-      "Every element is a table of its own: x, y, align, font, size, weight, color, opacity, spacing, uppercase.",
+      "Every element is a table of its own: x, y, align, font, size, weight, color, opacity, spacing, uppercase, direction, letters.",
+  },
+  {
+    key: "clock.day.direction",
+    value: '"horizontal"',
+    means:
+      'Which way a text of the clock or the player runs: "horizontal", "down" (top to bottom) or "up" (bottom to top).',
+  },
+  {
+    key: "clock.day.letters",
+    value: '"upright"',
+    means:
+      '"upright", or "sideways": turned a quarter, lying along the line, whichever way it runs.',
   },
   {
     key: "player.background",
@@ -262,7 +274,8 @@ export function ProductSections() {
             <strong className="text-foreground">Run anyway</strong>.
           </li>
           <li>
-            It lives in the notification area. Double-click its icon for settings.
+            It lives in the notification area. Double-click its icon for settings, or
+            right-click it for a small menu.
           </li>
           <li>
             Play something in the Spotify desktop app on the same PC. Playback sent to
@@ -288,8 +301,8 @@ export function ProductSections() {
         title="Using it"
         lede={
           <>
-            Deskbeat lives in the notification area. There is no menu: everything,
-            including quitting and starting with Windows, is in the settings panel.
+            Deskbeat lives in the notification area. Double-click its icon for settings,
+            or right-click it for a small menu.
           </>
         }
       >
@@ -297,6 +310,15 @@ export function ProductSections() {
           Double-click the tray icon, or press <C>Ctrl+Alt+S</C>, for settings. The
           progress bar seeks where you click it, and the three buttons are previous,
           play/pause and next.
+        </P>
+
+        <Sub>The tray menu</Sub>
+        <P>
+          A right-click on the tray icon opens a small menu: the name and version, a
+          link to the repository on GitHub, the <strong>Start with Windows</strong>{" "}
+          switch and <strong>Quit</strong>. The app draws it itself, in its own three
+          colours. Escape, or a click anywhere else, closes it. The settings panel has
+          the switch and Quit too.
         </P>
 
         <Sub>Where the widgets sit</Sub>
@@ -349,19 +371,19 @@ export function ProductSections() {
         </P>
         <P>
           Every element moves alone. Shift+click selects several, which then drag
-          together. The lyrics and the visualizer keep a frame, because it is what sizes
-          them: drag the widget to move it.
+          together. The space between elements does nothing, so nothing moves as a group
+          unless you select it. The lyrics and the visualizer keep a frame, because it
+          is what sizes them: drag the widget to move it.
         </P>
         <P>
           The Player tab has two ready-made arrangements to start from,{" "}
           <strong>Art on the left</strong> and <strong>Centred stack</strong>, and the
           Clock tab can reset its three positions.
         </P>
-        <Note label="Changed since 1.0.1">
+        <Note label="Changed in 1.1.0">
           In 1.0.0 and 1.0.1, dragging the space between a widget&apos;s elements moves
-          all of that widget. The change that makes every element move alone is in the
-          repository and listed under Unreleased in the changelog; it ships in the next
-          release.
+          all of that widget. From 1.1.0 every element moves alone, and dragging one no
+          longer makes the others jump or shimmer.
         </Note>
       </Section>
 
@@ -404,6 +426,16 @@ export function ProductSections() {
           Every colour setting has a picker: the last chip in its row opens a colour
           square, a hue bar and a hex field you can type into. A one-click look only
           touches appearance, never positions.
+        </P>
+
+        <Sub>Text that runs down or up</Sub>
+        <P>
+          Any text of the clock and the player can run across, down or up, with its
+          letters upright or lying sideways. So the day can be a column of upright
+          letters, or the title can read up the side of the album art. In the panel
+          these are the <strong>Runs</strong> row (Across, Down, Up) and the{" "}
+          <strong>Letters</strong> row (Upright, Sideways); in the file,{" "}
+          <C>direction</C> and <C>letters</C>.
         </P>
 
         <Sub>Fonts</Sub>
@@ -517,6 +549,11 @@ time_format = "%l:%M %p"
 [clock.day]
 size = 40.0
 uppercase = true
+direction = "down"
+
+[player.title]
+direction = "up"
+letters = "sideways"
 
 [lyrics]
 mode = "word"
