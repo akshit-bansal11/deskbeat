@@ -6,6 +6,8 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-04
+
 ### Added
 
 - Lyrics have two modes, `lyrics.mode`: what is being sung lights up at
