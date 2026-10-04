@@ -7,7 +7,9 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use deskbeat_core::color::{accent_from_bgra, downsample_bgra};
-use deskbeat_core::config::{Config, LyricsMode, PlayerLayout, Preset, VisualizerStyle};
+use deskbeat_core::config::{
+    Config, Direction, Letters, LyricsMode, PlayerLayout, Preset, VisualizerStyle,
+};
 use deskbeat_core::lrc::parse_lrc;
 use deskbeat_core::timefmt::LocalTime;
 use deskbeat_core::timing::normalize_lines;
@@ -23,6 +25,7 @@ use crate::capture::Audio;
 use crate::gfx::{Gfx, rect};
 use crate::lyrics::Lyrics;
 use crate::media::{Art, BLUR_SIDE, MediaState};
+use crate::menu;
 use crate::settings;
 use crate::widgets::{Ctx, Kind};
 
@@ -173,6 +176,14 @@ pub fn run(dir: &Path) -> Result<()> {
     hanging.visualizer.flip_y = true;
     hanging.visualizer.frame.anchor = deskbeat_core::config::Anchor::Top;
     hanging.clock.frame.y = 200;
+    // Text every way it can run: a column of upright letters, a line on its
+    // side reading down, and one reading up.
+    hanging.clock.day.direction = Direction::Down;
+    hanging.clock.date.direction = Direction::Down;
+    hanging.clock.date.letters = Letters::Sideways;
+    (hanging.clock.date.x, hanging.clock.date.y) = (120.0, 0.0);
+    hanging.player.artist.direction = Direction::Up;
+    hanging.player.artist.letters = Letters::Sideways;
     looks.push(("flipped".to_owned(), hanging));
 
     for (name, cfg) in &looks {
@@ -186,7 +197,15 @@ pub fn run(dir: &Path) -> Result<()> {
     let tabs = settings::TABS.len() as u32;
     let sheet = (settings::WIDTH as u32 * tabs, settings::HEIGHT as u32);
     let path = dir.join("settings.png");
-    png(&wic, &path, sheet, |gfx| settings_sheet(gfx, &media))?;
+    png(&wic, &path, sheet, settings_sheet)?;
+    println!("wrote {}", path.display());
+
+    // The tray menu, with the pointer on its second row.
+    let card = (menu::WIDTH as u32, menu::HEIGHT as u32);
+    let path = dir.join("tray-menu.png");
+    png(&wic, &path, card, |gfx| {
+        menu::paint(gfx, (40.0, 120.0), true)
+    })?;
     println!("wrote {}", path.display());
     Ok(())
 }
@@ -291,9 +310,8 @@ fn scene(
 }
 
 /// Every tab of the settings panel, side by side.
-fn settings_sheet(gfx: &mut Gfx, media: &MediaState) -> Result<()> {
+fn settings_sheet(gfx: &mut Gfx) -> Result<()> {
     let mut cfg = Config::default();
-    let accent = Palette::new(&cfg).accent(media);
     for tab in 0..settings::TABS.len() {
         let mut view = if tab == 0 {
             settings::View::with_picker_open()
@@ -305,7 +323,7 @@ fn settings_sheet(gfx: &mut Gfx, media: &MediaState) -> Result<()> {
             gfx,
             &mut cfg,
             (settings::WIDTH, settings::HEIGHT),
-            accent,
+            menu::EMBER,
             settings::Status {
                 edit: false,
                 hidden: false,

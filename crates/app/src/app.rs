@@ -39,6 +39,7 @@ use crate::capture::{self, Audio};
 use crate::gfx::{Gfx, Surface};
 use crate::lyrics::{self, Lyrics, LyricsState};
 use crate::media::{self, Cmd, MediaState};
+use crate::menu::{EMBER, Menu, Pick};
 use crate::settings::{Panel, Status};
 use crate::tray::Tray;
 use crate::widgets::{Action, Ctx, Kind, Part, Wake, Widget};
@@ -75,6 +76,7 @@ const FIT_PAD: f32 = 14.0;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "Deskbeat";
+const REPO_URL: &str = "https://github.com/akshit-bansal11/deskbeat";
 /// The start-with-Windows entry under the app's previous name.
 const OLD_RUN_VALUE: &str = "SonicVeil";
 
@@ -148,6 +150,8 @@ struct App {
     main: HWND,
     notify: Notify,
     tray: Tray,
+    /// The tray icon's menu, while it is open.
+    menu: Option<Menu>,
     hosts: Vec<Host>,
 
     cfg: Config,
@@ -285,6 +289,7 @@ pub fn run() -> Result<()> {
         main,
         notify,
         tray: Tray::new(main)?,
+        menu: None,
         hosts: Vec::new(),
         palette: Palette::new(&cfg),
         cfg,
@@ -425,6 +430,12 @@ impl App {
         }
         if self.settings.as_ref().is_some_and(|panel| panel.dirty) {
             self.draw_settings();
+        }
+        if let Some(menu) = self.menu.as_mut().filter(|menu| menu.dirty)
+            && let Err(error) = menu.draw(&mut self.gfx, self.scale, self.autostart)
+        {
+            log(&format!("drawing the tray menu failed: {error}"));
+            self.device_lost = true;
         }
 
         let (time, ms_to_next_second) = local_time();
@@ -589,7 +600,6 @@ impl App {
             (aw as f32 / self.scale) as i32,
             (ah as f32 / self.scale) as i32,
         );
-        let accent = self.palette.accent(&self.media);
         let mut cfg = self.cfg.clone();
         let Some(panel) = &mut self.settings else {
             return;
@@ -599,7 +609,7 @@ impl App {
             hidden: self.hidden,
             autostart: self.autostart,
         };
-        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, accent, status, area);
+        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, EMBER, status, area);
         let outcome = match drawn {
             Ok(outcome) => outcome,
             Err(error) => {
@@ -620,9 +630,7 @@ impl App {
             self.toggle_hidden();
         }
         if outcome.toggle_autostart {
-            set_autostart(!self.autostart);
-            // Read back rather than assumed: the registry write can fail.
-            self.autostart = autostart_enabled();
+            self.toggle_autostart();
         }
         if outcome.quit {
             self.quit = true;
@@ -632,8 +640,54 @@ impl App {
         }
     }
 
+    fn toggle_autostart(&mut self) {
+        set_autostart(!self.autostart);
+        // Read back rather than assumed: the registry write can fail.
+        self.autostart = autostart_enabled();
+        if let Some(panel) = &mut self.settings {
+            panel.dirty = true;
+        }
+    }
+
+    // ----- tray menu -------------------------------------------------------
+
+    fn open_menu(&mut self) {
+        // One that is still open, because it never became the active
+        // window, would otherwise be left behind.
+        if let Some(menu) = self.menu.take() {
+            menu.close();
+        }
+        match Menu::open(&self.gfx, self.scale) {
+            Ok(menu) => self.menu = Some(menu),
+            Err(error) => log(&format!("could not open the tray menu: {error}")),
+        }
+    }
+
+    fn close_menu(&mut self, hwnd: HWND) {
+        if let Some(menu) = self.menu.take_if(|menu| menu.hwnd == hwnd) {
+            menu.close();
+        }
+    }
+
+    fn picked(&mut self, pick: Pick) {
+        match pick {
+            Pick::GitHub => {
+                // Explorer hands an address to the default browser.
+                if let Err(error) = Command::new("explorer").arg(REPO_URL).spawn() {
+                    log(&format!("could not open the repository page: {error}"));
+                }
+            }
+            Pick::Autostart => self.toggle_autostart(),
+            Pick::Quit => self.quit = true,
+        }
+    }
+
     /// After a GPU reset or driver update every device object is dead.
     fn rebuild_graphics(&mut self) {
+        // The menu's surface is dead too, and it is cheaper to ask again.
+        if let Some(menu) = self.menu.take() {
+            menu.close();
+        }
         let rebuilt = Gfx::new().and_then(|gfx| {
             for host in &mut self.hosts {
                 host.surface = gfx.surface(host.hwnd, host.size.0 as u32, host.size.1 as u32)?;
@@ -676,12 +730,17 @@ impl App {
             Event::TaskbarCreated => self.tray.add(),
             Event::ShowSettings => self.open_settings(),
             Event::Tray(WM_LBUTTONDBLCLK) => self.open_settings(),
+            Event::Tray(WM_RBUTTONUP) => self.open_menu(),
+            Event::Blur(hwnd) => self.close_menu(hwnd),
             Event::Tray(_) => {}
             Event::Hotkey(id) => self.hotkey(id),
             Event::Foreground(hwnd) => self.foreground_changed(hwnd),
             Event::Moved(hwnd) => self.widget_moved(hwnd),
             Event::Mouse { hwnd, kind, x, y } => self.mouse(hwnd, kind, x, y),
             Event::Char { hwnd, code } => {
+                if Menu::closes_on(code) {
+                    self.close_menu(hwnd);
+                }
                 if let Some(panel) = self.settings.as_mut().filter(|panel| panel.hwnd == hwnd) {
                     panel.key(code);
                 }
@@ -692,6 +751,7 @@ impl App {
                 }
             }
             Event::Close(hwnd) => {
+                self.close_menu(hwnd);
                 if let Some(panel) = self.settings.take_if(|panel| panel.hwnd == hwnd) {
                     panel.close();
                 }
@@ -758,6 +818,14 @@ impl App {
     fn mouse(&mut self, hwnd: HWND, kind: Mouse, x: i32, y: i32) {
         if let Some(panel) = self.settings.as_mut().filter(|panel| panel.hwnd == hwnd) {
             panel.mouse(kind, x as f32 / self.scale, y as f32 / self.scale);
+            return;
+        }
+        if let Some(menu) = self.menu.as_mut().filter(|menu| menu.hwnd == hwnd) {
+            let pick = menu.mouse(kind, x as f32 / self.scale, y as f32 / self.scale);
+            if let Some(pick) = pick {
+                self.close_menu(hwnd);
+                self.picked(pick);
+            }
             return;
         }
         let Some(index) = self.host_index(hwnd) else {

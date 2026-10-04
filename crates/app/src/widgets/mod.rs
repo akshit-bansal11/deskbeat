@@ -8,7 +8,9 @@ pub mod visualizer;
 use std::time::Duration;
 
 use deskbeat_core::color::{Rgba, parse_hex, with_alpha};
-use deskbeat_core::config::{Align, ClockRow, Config, Frame, Label, PlayerPart};
+use deskbeat_core::config::{
+    Align, ClockRow, Config, Direction, Frame, Label, Letters, PlayerPart,
+};
 use deskbeat_core::timefmt::LocalTime;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
@@ -233,11 +235,38 @@ pub fn contains(r: &D2D_RECT_F, x: f32, y: f32) -> bool {
 
 /// A line of text laid out where its label puts it.
 pub struct Placed {
-    pub layout: IDWriteTextLayout,
-    /// Where to draw the layout so the text lands on the spot.
-    pub x: f32,
+    layout: IDWriteTextLayout,
+    /// Quarter turns clockwise to draw the layout at, then how far to move it.
+    quarter: i8,
+    offset: (f32, f32),
     /// The box the text itself covers.
     pub rect: D2D_RECT_F,
+}
+
+/// Draws a placed label where, and whichever way up, it was laid out.
+pub fn draw_placed(g: &Gfx, placed: &Placed, color: Rgba, shadow: bool) {
+    let old = g.turn(placed.quarter, placed.offset.0, placed.offset.1);
+    g.draw_text(&placed.layout, 0.0, 0.0, color, shadow);
+    g.restore(old);
+}
+
+/// The box `r` covers after `quarter` quarter turns clockwise about the origin.
+fn turned(r: D2D_RECT_F, quarter: i8) -> D2D_RECT_F {
+    match quarter {
+        1 => D2D_RECT_F {
+            left: -r.bottom,
+            top: r.left,
+            right: -r.top,
+            bottom: r.right,
+        },
+        -1 => D2D_RECT_F {
+            left: r.top,
+            top: -r.right,
+            right: r.bottom,
+            bottom: -r.left,
+        },
+        _ => r,
+    }
 }
 
 /// Share of a line box, above and below, that holds no ink.
@@ -260,8 +289,8 @@ pub fn label_color(label: &Label, ctx: &Ctx, opacity: f32) -> Rgba {
 }
 
 /// Lays out one piece of text the way its label asks: font, size, weight,
-/// letter spacing, capitals, and which edge sits on its position. The text
-/// takes at most `room` and is cut with an ellipsis beyond.
+/// letter spacing, capitals, which way it runs, and which edge sits on its
+/// position. The text takes at most `room` and is cut with an ellipsis beyond.
 pub fn place_label(g: &mut Gfx, text: &str, label: &Label, ctx: &Ctx, room: f32) -> Result<Placed> {
     let room = room.max(MIN_TEXT_WIDTH);
     // A font that is missing would be substituted by something unrelated;
@@ -271,44 +300,74 @@ pub fn place_label(g: &mut Gfx, text: &str, label: &Label, ctx: &Ctx, room: f32)
     } else {
         ctx.cfg.theme.font.as_str()
     };
-    let capitals;
-    let text = if label.uppercase {
-        capitals = text.to_uppercase();
-        capitals.as_str()
-    } else {
-        text
+    // Every way a line can run is one of two layouts, the line itself or its
+    // letters stacked one under another, drawn as it is or a quarter turned.
+    let (stack, quarter) = match (label.direction, label.letters) {
+        (Direction::Horizontal, Letters::Upright) => (false, 0),
+        (Direction::Down, Letters::Sideways) => (false, 1),
+        (Direction::Up, Letters::Sideways) => (false, -1),
+        (Direction::Down | Direction::Up, Letters::Upright) => (true, 0),
+        (Direction::Horizontal, Letters::Sideways) => (true, -1),
     };
+    let mut text = if label.uppercase {
+        text.to_uppercase()
+    } else {
+        text.to_owned()
+    };
+    if stack {
+        // ponytail: one char per line, so an accent typed as its own code
+        // point gets a line to itself. Split by grapheme if that ever shows.
+        let mut letters: Vec<String> = text.chars().map(String::from).collect();
+        if label.direction == Direction::Up {
+            letters.reverse();
+        }
+        text = letters.join("\n");
+    }
+    let align = if stack { Align::Center } else { label.align };
     let style = TextStyle {
         font,
         size: label.size,
         weight: label.weight,
-        align: label.align,
+        align,
         wrap: false,
     };
-    let layout = g.layout(text, &style, room, 10_000.0)?;
-    if label.spacing > 0.0 {
+    let layout = g.layout(&text, &style, room, 10_000.0)?;
+    if label.spacing > 0.0 && !stack {
         let units = text.encode_utf16().count() as u32;
         Gfx::letter_space(&layout, units, label.spacing * label.size)?;
     }
     let (text_w, text_h) = Gfx::measure(&layout);
     let text_w = text_w.min(room);
-    // How far left of the position the layout box, and the text in it, begin.
-    let (box_back, text_back) = match label.align {
-        Align::Left => (0.0, 0.0),
-        Align::Right => (room, text_w),
-        Align::Center => (room / 2.0, text_w / 2.0),
+    // Where the text begins inside its layout box, which is `room` wide.
+    let lead = match align {
+        Align::Left => 0.0,
+        Align::Right => room - text_w,
+        Align::Center => (room - text_w) / 2.0,
     };
+    // The label's position marks the top of the text as drawn, and whichever
+    // edge of it the label grows from.
+    let drawn = turned(rect(lead, 0.0, text_w, text_h), quarter);
+    let width = drawn.right - drawn.left;
+    let left = match label.align {
+        Align::Left => label.x,
+        Align::Right => label.x - width,
+        Align::Center => label.x - width / 2.0,
+    };
+    let offset = (left - drawn.left, label.y - drawn.top);
+    // A line box is taller than its letters, most of all at large sizes.
+    // Trimmed, so the grab box of one row does not cover its neighbours.
+    let trim = if stack { 0.0 } else { text_h * LINE_BOX_TRIM };
+    let grab = turned(rect(lead, trim, text_w, text_h - 2.0 * trim), quarter);
     Ok(Placed {
         layout,
-        x: label.x - box_back,
-        // A line box is taller than its letters, most of all at large sizes.
-        // Trimmed, so the grab box of one row does not cover its neighbours.
-        rect: rect(
-            label.x - text_back,
-            label.y + text_h * LINE_BOX_TRIM,
-            text_w,
-            text_h * (1.0 - 2.0 * LINE_BOX_TRIM),
-        ),
+        quarter,
+        offset,
+        rect: D2D_RECT_F {
+            left: grab.left + offset.0,
+            top: grab.top + offset.1,
+            right: grab.right + offset.0,
+            bottom: grab.bottom + offset.1,
+        },
     })
 }
 
@@ -330,6 +389,24 @@ mod tests {
         assert_eq!(Wake::Idle.sooner(long), long);
         assert_eq!(long.sooner(Wake::Frame), Wake::Frame);
         assert_eq!(Wake::Idle.sooner(Wake::Idle), Wake::Idle);
+    }
+
+    #[test]
+    fn a_quarter_turn_lays_a_box_on_its_side() {
+        let line = rect(10.0, 0.0, 100.0, 20.0);
+        // Clockwise: the line runs down, to the left of the origin.
+        let down = turned(line, 1);
+        assert_eq!(
+            (down.left, down.top, down.right, down.bottom),
+            (-20.0, 10.0, 0.0, 110.0)
+        );
+        // Anticlockwise: it runs up, above the origin.
+        let up = turned(line, -1);
+        assert_eq!(
+            (up.left, up.top, up.right, up.bottom),
+            (0.0, -110.0, 20.0, -10.0)
+        );
+        assert_eq!(turned(line, 0), line);
     }
 
     #[test]

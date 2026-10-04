@@ -411,6 +411,30 @@ impl Gfx {
         old
     }
 
+    /// Turns everything drawn from here on by `quarter` quarter turns
+    /// clockwise about the origin (-1 is anticlockwise), then moves it by
+    /// `(dx, dy)`. Returns the transform to `restore`.
+    pub fn turn(&self, quarter: i8, dx: f32, dy: f32) -> Matrix3x2 {
+        let mut old = Matrix3x2::identity();
+        unsafe { self.rt.GetTransform(&mut old) };
+        let (sin, cos) = match quarter {
+            1 => (1.0, 0.0),
+            -1 => (-1.0, 0.0),
+            _ => (0.0, 1.0),
+        };
+        // As in `scale_about`, the transform in place is a scale and an offset.
+        let matrix = Matrix3x2 {
+            M11: cos * old.M11,
+            M12: sin * old.M22,
+            M21: -sin * old.M11,
+            M22: cos * old.M22,
+            M31: dx * old.M11 + old.M31,
+            M32: dy * old.M22 + old.M32,
+        };
+        unsafe { self.rt.SetTransform(&matrix) };
+        old
+    }
+
     pub fn restore(&self, transform: Matrix3x2) {
         unsafe { self.rt.SetTransform(&transform) };
     }

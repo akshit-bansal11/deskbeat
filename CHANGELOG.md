@@ -6,11 +6,26 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-04
+
+### Added
+
+- Any text of the clock and the player can run across, down or up, with its
+  letters upright or lying sideways. So the day can be a column of upright
+  letters, or the title can read up the side of the album art. In the settings
+  panel these are Runs and Letters; in the file, `direction` and `letters`.
+- A menu on a right-click of the tray icon: the name and version, a link to
+  the repository, the start-with-Windows switch and Quit. The app draws it
+  itself. Escape or a click anywhere else closes it.
+- A website, with the documentation on one page.
+
 ### Changed
 
 - A new mark: four sound bars, centred like a waveform, that draw the letter
-  D. The README shows a recording of the app instead of a rendered still.
-  The tray icon shows the same mark.
+  D. It is drawn in the three colours everything of the app's own now uses:
+  ink, paper and one accent. The tray icon, the tray menu and the settings
+  panel use the same three.
+- The README shows a recording of the app instead of a rendered still.
 - In Edit layout the space between the elements of the clock and the player
   no longer moves them all together. Every element moves alone; Shift+click
   several to move them as one.

@@ -8,8 +8,8 @@ use windows::Win32::Graphics::Direct2D::ID2D1Bitmap;
 use windows::core::Result;
 
 use super::{
-    Action, Ctx, Part, Tick, Wake, Widget, clock_text, contains, draw_card, label_color,
-    named_color, place_label,
+    Action, Ctx, Part, Tick, Wake, Widget, clock_text, contains, draw_card, draw_placed,
+    label_color, named_color, place_label,
 };
 use crate::gfx::{Gfx, ICON_FONT, TextStyle, rect};
 use crate::media::BLUR_SIDE;
@@ -77,7 +77,7 @@ impl Player {
         let shadow = ctx.cfg.theme.text_shadow && p.background == PlayerBackground::None;
         let placed = place_label(g, text, label, ctx, room)?;
         let color = label_color(label, ctx, p.opacity);
-        g.draw_text(&placed.layout, placed.x, label.y, color, shadow);
+        draw_placed(g, &placed, color, shadow);
         self.parts.push((part as u8, placed.rect));
         Ok(())
     }

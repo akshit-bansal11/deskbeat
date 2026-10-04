@@ -80,6 +80,8 @@ pub enum Event {
     },
     /// The user finished dragging or resizing a window.
     Moved(HWND),
+    /// A window stopped being the active one.
+    Blur(HWND),
     Close(HWND),
 }
 
@@ -197,6 +199,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_DISPLAYCHANGE | WM_DPICHANGED => push(Event::Display),
         WM_SETTINGCHANGE if wp.0 == SPI_SETWORKAREA.0 as usize => push(Event::Display),
         WM_EXITSIZEMOVE => push(Event::Moved(hwnd)),
+        // The low word is the new state; zero is WA_INACTIVE.
+        WM_ACTIVATE if wp.0 & 0xFFFF == 0 => push(Event::Blur(hwnd)),
         WM_CHAR => push(Event::Char {
             hwnd,
             code: wp.0 as u32,
@@ -362,6 +366,26 @@ pub fn create_panel(
     bounds: (i32, i32, i32, i32),
 ) -> Result<HWND> {
     create(Role::Panel, WS_EX_NOREDIRECTIONBITMAP, style, title, bounds)
+}
+
+/// A borderless window above everything, for the tray menu. Unlike a widget
+/// it takes focus, which is how it learns that the user clicked elsewhere.
+pub fn create_menu(bounds: (i32, i32, i32, i32)) -> Result<HWND> {
+    create(
+        Role::Panel,
+        WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+        WS_POPUP,
+        w!("Deskbeat menu"),
+        bounds,
+    )
+}
+
+/// Where the pointer is on the screen, in pixels.
+pub fn pointer() -> (i32, i32) {
+    let mut at = POINT::default();
+    // On failure the point stays at the origin, which is still on screen.
+    let _ = unsafe { GetCursorPos(&mut at) };
+    (at.x, at.y)
 }
 
 /// Click-through windows let every mouse event fall to whatever is beneath.
