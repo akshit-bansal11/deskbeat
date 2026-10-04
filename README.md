@@ -14,6 +14,8 @@ Desktop widgets for Spotify on Windows 11, in one small native app: a spectrum v
 
 It is built as a light alternative to a Rainmeter setup. Widgets redraw only when something changes, and nothing is drawn at all while Spotify is silent or a window covers the desktop.
 
+**Website and documentation: [deskbeat.vercel.app](https://deskbeat.vercel.app).**
+
 > Formerly Sonic Veil. Settings from that name are carried over the first time `deskbeat.exe` runs. What is and is not verified is listed under [What has and has not been tested](#what-has-and-has-not-been-tested).
 
 ## What you get
@@ -122,6 +124,7 @@ git remote add upstream https://github.com/akshit-bansal11/deskbeat.git   # to p
 | `scripts/` | The quality gate. |
 | `docs/` | [Architecture](docs/ARCHITECTURE.md). |
 | `packaging/` | The winget manifest. |
+| `site/` | The [website](site/README.md), with its own gate and workflow. |
 
 ### Prerequisites
 

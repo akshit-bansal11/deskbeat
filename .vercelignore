@@ -1,0 +1,19 @@
+# The site is deployed from the repository root, with vercel.json running the build
+# inside site/. Nothing outside site/ is read by that build, so the app's source, its
+# build output and everything else stay out of the upload.
+/crates
+/assets
+/docs
+/packaging
+/scripts
+/target
+/snapshots
+/dist
+/.github
+/.claude
+/Cargo.toml
+/Cargo.lock
+
+node_modules
+.next
+out

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <title>Deskbeat</title>
+  <!-- The Deskbeat mark. One file for both browser themes: an Ink tile on a light tab strip, a Paper tile on a dark one. -->
+  <style>
+    .tile { fill: #131316; }
+    .bar { fill: #F5F4F0; }
+    .beat { fill: #FF6B45; }
+    @media (prefers-color-scheme: dark) {
+      .tile { fill: #F5F4F0; }
+      .bar { fill: #131316; }
+      .beat { fill: #CC3510; }
+    }
+  </style>
+  <rect class="tile" width="108" height="108" rx="26"/>
+  <rect class="bar" x="21" y="19" width="13" height="70" rx="6.5"/>
+  <rect class="bar" x="39" y="22" width="13" height="64" rx="6.5"/>
+  <rect class="bar" x="57" y="29" width="13" height="50" rx="6.5"/>
+  <rect class="beat" x="75" y="41" width="13" height="26" rx="6.5"/>
+</svg>
