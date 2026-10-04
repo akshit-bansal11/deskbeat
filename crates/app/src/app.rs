@@ -912,6 +912,10 @@ impl App {
                 for host in &mut self.hosts {
                     host.dirty |= self.selected.iter().any(|(kind, _)| *kind == host.kind);
                 }
+                // Its position sliders follow.
+                if let Some(panel) = &mut self.settings {
+                    panel.dirty = true;
+                }
             }
             Mouse::Up => {
                 if self.drag.take().is_some() {
@@ -981,6 +985,10 @@ impl App {
         self.cfg = self.cfg.clone().sanitized();
         self.save_config();
         self.sync_windows();
+        // The panel's position and size sliders show where it was a moment ago.
+        if let Some(panel) = &mut self.settings {
+            panel.dirty = true;
+        }
     }
 
     fn foreground_changed(&mut self, hwnd: HWND) {

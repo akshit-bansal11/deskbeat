@@ -40,6 +40,8 @@ pub struct Visualizer {
     targets: Vec<f32>,
     levels: Vec<f32>,
 
+    /// How many bars the last draw had room for. Zero before the first.
+    shown: usize,
     last_ms: f64,
     moving: bool,
     brush: Option<(ID2D1LinearGradientBrush, [f32; 10])>,
@@ -60,15 +62,22 @@ impl Visualizer {
             map: None,
             targets: Vec::new(),
             levels: Vec::new(),
+            shown: 0,
             last_ms: 0.0,
             moving: false,
             brush: None,
         }
     }
 
-    /// How many distinct bands feed the bars. A symmetric layout shows each twice.
-    fn band_count(cfg: &VisualizerCfg) -> usize {
-        let bars = cfg.bars as usize;
+    /// How many distinct bands feed the bars. The whole range of pitch is
+    /// spread over the bars there is room for, so leaving bars out loses no
+    /// treble. A symmetric layout shows each band twice.
+    fn band_count(&self, cfg: &VisualizerCfg) -> usize {
+        let bars = if self.shown == 0 {
+            cfg.bars as usize
+        } else {
+            self.shown
+        };
         if cfg.symmetric {
             bars.div_ceil(2)
         } else {
@@ -129,6 +138,13 @@ impl Visualizer {
     }
 }
 
+/// How many of `wanted` bars fit side by side in `room`.
+fn fitting(wanted: usize, room: f32, bar_width: f32, gap: f32) -> usize {
+    // A gap sits between two bars, so the last bar needs none after it.
+    let fit = ((room + gap) / (bar_width + gap)) as usize;
+    wanted.min(fit).max(1)
+}
+
 fn colors(cfg: &VisualizerCfg, ctx: &Ctx) -> (Rgba, Rgba) {
     let hex = |s: &str| parse_hex(s).unwrap_or(ctx.accent);
     match cfg.color {
@@ -146,7 +162,7 @@ impl Widget for Visualizer {
 
     fn tick(&mut self, ctx: &Ctx) -> Tick {
         let cfg = &ctx.cfg.visualizer;
-        let bands = Self::band_count(cfg);
+        let bands = self.band_count(cfg);
         if self.levels.len() != bands {
             self.levels = vec![0.0; bands];
             self.targets = vec![0.0; bands];
@@ -193,14 +209,31 @@ impl Widget for Visualizer {
     }
 
     fn draw(&mut self, g: &mut Gfx, w: f32, h: f32, ctx: &Ctx) -> Result<()> {
+        // Turned, the same picture is drawn in a box as wide as this one
+        // is tall, and the whole of it is rotated into place.
+        let (quarter, (dx, dy)) = match ctx.cfg.visualizer.rotation {
+            90 => (1, (w, 0.0)),
+            180 => (2, (w, h)),
+            270 => (-1, (0.0, h)),
+            _ => return self.paint(g, w, h, ctx),
+        };
+        let (w, h) = if quarter == 2 { (w, h) } else { (h, w) };
+        let saved = g.turn(quarter, dx, dy);
+        let painted = self.paint(g, w, h, ctx);
+        g.restore(saved);
+        painted
+    }
+}
+
+impl Visualizer {
+    fn paint(&mut self, g: &mut Gfx, w: f32, h: f32, ctx: &Ctx) -> Result<()> {
         let cfg = &ctx.cfg.visualizer;
         if cfg.card {
             draw_card(g, w, h, ctx, cfg.opacity);
         }
         let pad = if cfg.card { 18.0 } else { 0.0 };
         let (left, top, width, height) = (pad, pad, w - 2.0 * pad, h - 2.0 * pad);
-        let bars = cfg.bars as usize;
-        if width <= 0.0 || height <= 0.0 || bars == 0 {
+        if width <= 0.0 || height <= 0.0 || cfg.bars == 0 {
             return Ok(());
         }
 
@@ -213,15 +246,27 @@ impl Widget for Visualizer {
         {
             self.brush = Some((g.gradient(left, left + width, a, b)?, key));
         }
+
+        // Bars keep their own width and gap whatever their number. Those
+        // that do not fit are left out, and the rest sit in the middle.
+        let bar_width = cfg.bar_width.min(width);
+        let pitch = bar_width + cfg.bar_gap;
+        let bars = fitting(cfg.bars as usize, width, bar_width, cfg.bar_gap);
+        self.shown = bars;
+        let run = bars as f32 * pitch - cfg.bar_gap;
+        let start = left + ((width - run) / 2.0).max(0.0);
+        let radius = bar_width * cfg.radius;
+        // A bar at rest is a dot, unless those are switched off.
+        let floor = if cfg.show_idle {
+            MIN_BAR_HEIGHT.min(height)
+        } else {
+            0.0
+        };
+
         let Some((brush, _)) = &self.brush else {
             return Ok(());
         };
         unsafe { brush.SetOpacity(cfg.opacity) };
-
-        let pitch = width / bars as f32;
-        let bar_width = (pitch * (1.0 - cfg.gap)).max(1.0);
-        let radius = bar_width * cfg.radius;
-        let floor = MIN_BAR_HEIGHT.min(height);
 
         // Flipping sideways reads the bands in reverse; flipping upside down
         // hangs the shape from the top edge instead of standing it on the bottom.
@@ -234,20 +279,23 @@ impl Widget for Visualizer {
 
         if cfg.style == VisualizerStyle::Wave {
             let mut points = Vec::with_capacity(bars + 2);
-            points.push((left, base));
+            points.push((start, base));
             for i in 0..bars {
                 points.push((
-                    left + pitch * (i as f32 + 0.5),
+                    start + pitch * i as f32 + bar_width / 2.0,
                     base + rise * (level_at(i) * height).max(floor),
                 ));
             }
-            points.push((left + width, base));
+            points.push((start + run, base));
             return g.fill_curve(&points, base, brush);
         }
 
         for i in 0..bars {
             let bar_height = (level_at(i) * height).max(floor);
-            let x = left + pitch * i as f32 + (pitch - bar_width) / 2.0;
+            if bar_height < 0.5 {
+                continue;
+            }
+            let x = start + pitch * i as f32;
             let y = match cfg.style {
                 VisualizerStyle::Mirror => top + (height - bar_height) / 2.0,
                 _ if cfg.flip_y => top,
@@ -277,6 +325,15 @@ mod tests {
         vis.levels = vec![1.0, 0.5, 0.25];
         let odd: Vec<f32> = (0..5).map(|i| vis.bar_level(i, 5, true)).collect();
         assert_eq!(odd, [0.5, 1.0, 1.0, 0.5, 0.25]);
+    }
+
+    #[test]
+    fn bars_that_do_not_fit_are_left_out_and_never_squeezed() {
+        // Ten wide with a gap of six: 16 each, and the last needs no gap.
+        assert_eq!(fitting(120, 160.0, 10.0, 6.0), 10);
+        assert_eq!(fitting(120, 170.0, 10.0, 6.0), 11);
+        assert_eq!(fitting(4, 2000.0, 10.0, 6.0), 4);
+        assert_eq!(fitting(120, 3.0, 10.0, 6.0), 1);
     }
 
     #[test]

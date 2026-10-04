@@ -722,8 +722,16 @@ pub struct VisualizerCfg {
     pub style: VisualizerStyle,
     pub source: AudioSource,
     pub bars: u32,
-    /// Gap between bars as a fraction of the bar pitch.
-    pub gap: f32,
+    /// How wide each bar is, and the space between two, in
+    /// display-independent pixels. Neither changes with the number of bars:
+    /// bars that do not fit the widget are left out.
+    pub bar_width: f32,
+    pub bar_gap: f32,
+    /// Draw a bar with no sound in it as a dot. Off, it is not drawn.
+    pub show_idle: bool,
+    /// Quarter turns clockwise, in degrees: 0, 90, 180 or 270. At 90 or
+    /// 270 the bars run down the screen instead of across it.
+    pub rotation: u32,
     /// Corner radius as a fraction of the bar width.
     pub radius: f32,
     /// Bass in the middle, treble at both edges.
@@ -760,7 +768,10 @@ impl Default for VisualizerCfg {
             style: VisualizerStyle::Bars,
             source: AudioSource::Spotify,
             bars: 120,
-            gap: 0.38,
+            bar_width: 10.0,
+            bar_gap: 6.0,
+            show_idle: true,
+            rotation: 0,
             radius: 0.5,
             symmetric: false,
             flip_x: false,
@@ -968,7 +979,9 @@ impl Config {
         let v = &mut self.visualizer;
         frame(&mut v.frame);
         unit(&mut v.opacity);
-        range(&mut v.gap, 0.0, 0.9, 0.38);
+        range(&mut v.bar_width, 1.0, 200.0, 10.0);
+        range(&mut v.bar_gap, 0.0, 200.0, 6.0);
+        v.rotation = v.rotation / 90 % 4 * 90;
         range(&mut v.radius, 0.0, 0.5, 0.5);
         range(&mut v.sensitivity, -30.0, 40.0, 0.0);
         range(&mut v.attack_ms, 0.0, 2000.0, 28.0);
@@ -1067,12 +1080,13 @@ mod tests {
     #[test]
     fn out_of_range_numbers_are_clamped() {
         let cfg = Config::from_toml(
-            "[visualizer]\nbars = 100000\nfps = 0\ngap = 7.5\n[lyrics]\nsize = -4.0\n[clock.frame]\nw = 1\n",
+            "[visualizer]\nbars = 100000\nfps = 0\nbar_gap = 750.0\nrotation = 100\n[lyrics]\nsize = -4.0\n[clock.frame]\nw = 1\n",
         )
         .unwrap();
         assert_eq!(cfg.visualizer.bars, MAX_BARS);
         assert_eq!(cfg.visualizer.fps, 10);
-        assert_eq!(cfg.visualizer.gap, 0.9);
+        assert_eq!(cfg.visualizer.bar_gap, 200.0);
+        assert_eq!(cfg.visualizer.rotation, 90);
         assert_eq!(cfg.lyrics.size, 10.0);
         assert_eq!(cfg.clock.frame.w, 80);
     }

@@ -6,6 +6,37 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-04
+
+### Added
+
+- The exe has an icon: the mark, in Explorer, on the taskbar and in the
+  settings window's title bar.
+- `visualizer.bar_width` and `visualizer.bar_gap`, in pixels. The number of
+  bars no longer changes their width: bars that do not fit are left out, the
+  rest sit in the middle, and the whole range of pitch is spread over the
+  ones shown. `visualizer.gap`, a share of the bar, is gone.
+- `visualizer.rotation`: 0, 90, 180 or 270. At a quarter turn the bars run
+  down the screen.
+- `visualizer.show_idle`, on by default. Off, a bar with no sound in it is
+  not drawn at all, where it was a dot.
+- An Across slider for the visualizer. Moving it ends "Span the whole screen".
+
+### Changed
+
+- Word by word lights one word at a time: a word goes out again when it is
+  over. It stayed lit until the end of its line. A word that lights up at
+  once now fades in and out over a moment.
+- The position sliders of the lyrics and the visualizer place their middle,
+  so the middle notch is the middle of the screen, and keep them on the
+  screen. They placed the top-left corner, so a frame as tall as the screen
+  read 0 and could be pushed out of view.
+
+### Fixed
+
+- Dragging something in Edit layout did not move its sliders in the settings
+  panel until the panel was touched.
+
 ## [1.2.0] - 2026-10-04
 
 ### Added

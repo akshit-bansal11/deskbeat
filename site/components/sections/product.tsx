@@ -80,7 +80,7 @@ const PANEL: { tab: string; covers: string }[] = [
   {
     tab: "Visualizer",
     covers:
-      "Show it, a card behind it, its style (bars, mirrored bars or a wave), what it listens to (Spotify only, or everything), spanning the whole screen, the number of bars, gap, roundness, bass in the middle, and flipping left to right or upside down. Its colour: the accent, one colour or a gradient. Its motion: sensitivity, rise, fall, frames per second, treble boost and pitch range.",
+      "Show it, a card behind it, its style (bars, mirrored bars or a wave), what it listens to (Spotify only, or everything), spanning the whole screen, turning it a quarter so the bars run down the screen, the number of bars, their width, the gap between them, roundness, dots for bars at rest, bass in the middle, and flipping left to right or upside down. Its colour: the accent, one colour or a gradient. Its motion: sensitivity, rise, fall, frames per second, treble boost and pitch range.",
   },
 ];
 

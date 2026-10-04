@@ -412,7 +412,7 @@ impl Gfx {
     }
 
     /// Turns everything drawn from here on by `quarter` quarter turns
-    /// clockwise about the origin (-1 is anticlockwise), then moves it by
+    /// clockwise about the origin (-1 is anticlockwise, 2 a half turn), then moves it by
     /// `(dx, dy)`. Returns the transform to `restore`.
     pub fn turn(&self, quarter: i8, dx: f32, dy: f32) -> Matrix3x2 {
         let mut old = Matrix3x2::identity();
@@ -420,6 +420,7 @@ impl Gfx {
         let (sin, cos) = match quarter {
             1 => (1.0, 0.0),
             -1 => (-1.0, 0.0),
+            2 => (0.0, -1.0),
             _ => (0.0, 1.0),
         };
         // As in `scale_about`, the transform in place is a scale and an offset.

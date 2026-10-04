@@ -1166,25 +1166,42 @@ impl Ui<'_> {
         Ok(())
     }
 
-    /// The same two sliders for a widget with a frame of its own: they move
-    /// its top-left corner. `across` is false for one that spans the screen.
-    fn frame_position(&mut self, frame: &mut Frame, across: bool) -> Result<()> {
+    /// The same two sliders for a widget with a frame of its own. They
+    /// place its centre, so the middle notch is the middle of the screen,
+    /// and they keep it on the screen: a frame as tall as the screen has
+    /// nowhere to go. `spans` is a frame drawn from edge to edge whatever
+    /// its own width says. Returns whether it was moved across.
+    fn frame_position(&mut self, frame: &mut Frame, spans: bool) -> Result<bool> {
         let scale = self.status.scale;
         let (area_w, area_h) = self.area;
         let (left, top) = frame.origin(area_w, area_h);
-        let (mut x, mut y) = ((left as f32 * scale).round(), (top as f32 * scale).round());
+        let (w, h) = (frame.w as f32, frame.h as f32);
+        let across = if spans {
+            area_w as f32 / 2.0
+        } else {
+            left as f32 + w / 2.0
+        };
+        let (mut x, mut y) = (
+            (across * scale).round(),
+            ((top as f32 + h / 2.0) * scale).round(),
+        );
         let before = (x, y);
-        if across {
-            let range = (0.0, (area_w as f32 * scale).round(), 1.0);
-            self.slider_with("Across (px)", &mut x, range, true)?;
-        }
+        let range = (0.0, (area_w as f32 * scale).round(), 1.0);
+        self.slider_with("Across (px)", &mut x, range, true)?;
         let range = (0.0, (area_h as f32 * scale).round(), 1.0);
         self.slider_with("Down (px)", &mut y, range, true)?;
-        if (x, y) != before {
-            let (left, top) = ((x / scale).round() as i32, (y / scale).round() as i32);
+
+        let corner = |centre: f32, size: f32, room: i32| {
+            let wanted = (centre / scale - size / 2.0).round() as i32;
+            wanted.clamp(0, (room - size as i32).max(0))
+        };
+        let moved = (x != before.0, y != before.1);
+        if moved.0 || moved.1 {
+            let left = if moved.0 { corner(x, w, area_w) } else { left };
+            let top = if moved.1 { corner(y, h, area_h) } else { top };
             frame.set_origin(left, top, area_w, area_h);
         }
-        Ok(())
+        Ok(moved.0)
     }
 
     /// Every setting of one piece of text: where, how it looks, which way
@@ -1436,8 +1453,8 @@ fn lyrics(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
             ui.toggle("Card behind them", &mut l.card)?;
             ui.slider("Opacity", &mut l.opacity, 0.0, 1.0, 0.05)?;
 
-            ui.group("Position and size")?;
-            ui.frame_position(&mut l.frame, true)?;
+            ui.group("Where its middle is, and its size")?;
+            ui.frame_position(&mut l.frame, false)?;
             let (max_w, max_h) = (ui.area.0.max(80) as u32, ui.area.1.max(40) as u32);
             ui.slider_u32("Width", &mut l.frame.w, 80, max_w, 10)?;
             ui.slider_u32("Height", &mut l.frame.h, 40, max_h, 10)
@@ -1499,14 +1516,34 @@ fn visualizer(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
             ui.toggle("Card behind it", &mut v.card)?;
             ui.slider("Opacity", &mut v.opacity, 0.0, 1.0, 0.05)?;
 
-            ui.group("Position and size")?;
+            ui.group("Where its middle is, and its size")?;
             ui.toggle("Span the whole screen", &mut v.full_width)?;
-            ui.frame_position(&mut v.frame, !v.full_width)?;
+            if ui.frame_position(&mut v.frame, v.full_width)? {
+                // Moved across: it is an ordinary box from here on.
+                v.full_width = false;
+            }
             let (max_w, max_h) = (ui.area.0.max(80) as u32, ui.area.1.max(40) as u32);
             if !v.full_width {
                 ui.slider_u32("Width", &mut v.frame.w, 80, max_w, 10)?;
             }
-            ui.slider_u32("Height", &mut v.frame.h, 40, max_h, 10)
+            ui.slider_u32("Height", &mut v.frame.h, 40, max_h, 10)?;
+            let turned = v.rotation;
+            ui.choice(
+                "Turned",
+                &mut v.rotation,
+                &[
+                    (0, "Not turned"),
+                    (90, "A quarter"),
+                    (180, "Upside down"),
+                    (270, "Three quarters"),
+                ],
+            )?;
+            if turned / 90 % 2 != v.rotation / 90 % 2 {
+                // Stood up or laid down: the box turns with its bars.
+                v.full_width = false;
+                std::mem::swap(&mut v.frame.w, &mut v.frame.h);
+            }
+            Ok(())
         }
         1 => {
             ui.group("")?;
@@ -1520,7 +1557,10 @@ fn visualizer(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
                 ],
             )?;
             ui.slider_u32("Bars", &mut v.bars, 4, MAX_BARS, 1)?;
-            ui.slider("Gap", &mut v.gap, 0.0, 0.9, 0.02)?;
+            ui.slider("Bar width", &mut v.bar_width, 1.0, 60.0, 1.0)?;
+            ui.slider("Gap", &mut v.bar_gap, 0.0, 60.0, 1.0)?;
+            ui.note("Bars that do not fit are left out; they are never squeezed.")?;
+            ui.toggle("Dots for bars at rest", &mut v.show_idle)?;
             ui.slider("Roundness", &mut v.radius, 0.0, 0.5, 0.05)?;
 
             ui.group("Order")?;
