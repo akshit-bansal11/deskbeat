@@ -280,10 +280,16 @@ unsafe extern "system" fn foreground_changed(
 /// Registers the window class and the system-wide hooks. Call once.
 pub fn register() -> Result<()> {
     unsafe {
+        let instance: HINSTANCE = GetModuleHandleW(None)?.into();
         let class = WNDCLASSEXW {
             cbSize: size_of::<WNDCLASSEXW>() as u32,
             lpfnWndProc: Some(wndproc),
-            hInstance: GetModuleHandleW(None)?.into(),
+            hInstance: instance,
+            // The exe's own icon, resource 1 of `icon.res`, for the settings
+            // window's title bar and taskbar button. A test build has no
+            // resources, and gets none.
+            hIcon: LoadIconW(Some(instance), PCWSTR(std::ptr::without_provenance(1)))
+                .unwrap_or_default(),
             hCursor: LoadCursorW(None, IDC_ARROW)?,
             lpszClassName: CLASS,
             ..Default::default()
