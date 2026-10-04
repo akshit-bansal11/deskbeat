@@ -580,14 +580,14 @@ impl PlayerCfg {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LyricsMode {
-    /// Highlight the current line. Exact for LRCLIB, which carries line timing.
+    /// What is being sung lights up all at once. Files from before 1.2
+    /// call it `line`.
     #[default]
-    Line,
-    /// Fill each word as it is sung, from the time a LyricsPlus server gives
-    /// for it. A track with no such timing is shown line by line: a word's
-    /// time is never guessed.
-    Word,
-    /// Fill the current line from its start to its end as it is sung.
+    #[serde(alias = "line")]
+    Complete,
+    /// What is being sung fills from its start to its end. Files from
+    /// before 1.2 call it `word`, which filled each word.
+    #[serde(alias = "word")]
     Progress,
 }
 
@@ -635,8 +635,10 @@ pub struct LyricsCfg {
     /// In word mode, the opacity of the words of the current line that have
     /// not been sung yet.
     pub unsung_opacity: f32,
-    /// Ask the servers below for the time each word is sung. LRCLIB, the
-    /// fallback, only knows when lines start.
+    /// Follow the song word by word where the time each word is sung is
+    /// known, which the servers below are asked for. Where it is not, and
+    /// when this is off, the song is followed line by line: LRCLIB only
+    /// knows when lines start, and a word's time is never guessed.
     pub word_sync: bool,
     /// LyricsPlus servers, tried in order.
     pub word_servers: Vec<String>,
@@ -650,7 +652,7 @@ impl Default for LyricsCfg {
             frame: Frame::new(Anchor::Right, 72, -80, 620, 370),
             card: false,
             opacity: 1.0,
-            mode: LyricsMode::Line,
+            mode: LyricsMode::Complete,
             font: String::new(),
             align: Align::Right,
             size: 30.0,
@@ -1048,7 +1050,8 @@ mod tests {
             "[lyrics]\nmode = \"word\"\nfuture_key = 1\n\n[visualizer]\nstyle = \"wave\"\nbars = 24\n",
         )
         .unwrap();
-        assert_eq!(cfg.lyrics.mode, LyricsMode::Word);
+        // The old name of the mode that fills.
+        assert_eq!(cfg.lyrics.mode, LyricsMode::Progress);
         assert_eq!(cfg.lyrics.size, LyricsCfg::default().size);
         assert_eq!(cfg.visualizer.style, VisualizerStyle::Wave);
         assert_eq!(cfg.visualizer.bars, 24);

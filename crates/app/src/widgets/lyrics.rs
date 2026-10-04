@@ -49,6 +49,8 @@ pub struct LyricsView {
 struct Place {
     active: Option<usize>,
     lit: bool,
+    /// The current line is being followed word by word.
+    by_word: bool,
     word: Option<usize>,
     /// Track position, in ms, of the next change. `i64::MAX` when there is none.
     next_change: i64,
@@ -83,6 +85,7 @@ fn place_synced(lines: &[Line], pos: i64, by_word: bool) -> Place {
     Place {
         active,
         lit,
+        by_word: lit && by_word,
         word,
         next_change,
     }
@@ -96,6 +99,7 @@ fn place_plain(count: usize, pos: i64, duration_ms: f64) -> Place {
         return Place {
             active: None,
             lit: false,
+            by_word: false,
             word: None,
             next_change: i64::MAX,
         };
@@ -105,6 +109,7 @@ fn place_plain(count: usize, pos: i64, duration_ms: f64) -> Place {
     Place {
         active: Some(index),
         lit: false,
+        by_word: false,
         word: None,
         next_change: ((index + 1) as f64 * per_line) as i64 + 1,
     }
@@ -227,8 +232,9 @@ fn draw_progress(
 }
 
 /// Paints the sung part of the current line over its unsung text: the words
-/// that are over in `sung`, and as much of each word in progress as has been
-/// sung in `singing`, behind an edge `feather` wide.
+/// that are over in `sung`, and each word in progress in `singing`. With a
+/// `feather`, as much of that word as has been sung, behind an edge that
+/// wide; without one, the whole word from the moment it starts.
 fn draw_sung(
     g: &Gfx,
     layout: &IDWriteTextLayout,
@@ -236,19 +242,20 @@ fn draw_sung(
     (x, y): (f32, f32),
     pos: i64,
     (sung, singing): (Rgba, Rgba),
-    feather: f32,
+    feather: Option<f32>,
 ) -> Result<()> {
     for (word, (start, len)) in line.words.iter().zip(word_ranges(line)) {
         if pos < word.start_ms {
             continue;
         }
         let boxes = Gfx::range_rects(layout, start, len);
-        if pos >= word.end_ms {
+        let Some(feather) = feather.filter(|_| pos < word.end_ms) else {
+            let color = if pos < word.end_ms { singing } else { sung };
             for clip in boxes {
-                g.draw_text_clipped(layout, x, y, sung, clip);
+                g.draw_text_clipped(layout, x, y, color, clip);
             }
             continue;
-        }
+        };
         let done = (pos - word.start_ms) as f32 / (word.end_ms - word.start_ms) as f32;
         sweep(g, layout, (x, y), &boxes, done, singing, feather)?;
     }
@@ -289,7 +296,7 @@ impl Widget for LyricsView {
 
         let pos = self.clock.read() as i64;
         let place = match ctx.lyrics {
-            Lyrics::Synced(lines) => place_synced(lines, pos, cfg.mode == LyricsMode::Word),
+            Lyrics::Synced(lines) => place_synced(lines, pos, cfg.word_sync),
             Lyrics::Plain(lines) => place_plain(lines.len(), pos, media.duration_ms),
             _ => place_plain(0, pos, 0.0),
         };
@@ -298,10 +305,15 @@ impl Widget for LyricsView {
             dirty = true;
         }
         // A word or a line in progress is filling, so every new position is
-        // a new picture.
-        let sweeping = cfg.mode == LyricsMode::Progress && place.lit;
-        let filling = (place.word.is_some() || sweeping) && pos != self.pos;
-        dirty |= filling;
+        // a new picture. Words that light up whole only change at the times
+        // this is woken for, and are redrawn at each.
+        let in_progress = if place.by_word {
+            place.word.is_some()
+        } else {
+            place.lit
+        };
+        let filling = cfg.mode == LyricsMode::Progress && in_progress && pos != self.pos;
+        dirty |= filling || (place.by_word && pos != self.pos);
         self.active = place.active;
         self.lit = place.lit;
         self.word = place.word;
@@ -425,31 +437,28 @@ impl Widget for LyricsView {
             // Size and highlight arrive with the line as it scrolls to the centre.
             let nearness = (1.0 - distance.abs()).clamp(0.0, 1.0);
             let glow = if current { nearness } else { 0.0 };
-            // A line that fills starts out unsung: word by word when the
-            // time of each word is known, or as one sweep. Otherwise all of
-            // it is lit at once.
-            let filling =
-                synced
-                    .filter(|_| current)
-                    .map(|lines| &lines[i])
-                    .filter(|line| match cfg.mode {
-                        LyricsMode::Line => false,
-                        LyricsMode::Word => line.word_timed(),
-                        LyricsMode::Progress => true,
-                    });
-            let lit = if filling.is_some() { unsung } else { active };
+            // The current line is followed word by word when the time of
+            // each word is known, and as a whole otherwise. Either way what
+            // is being sung fills, or lights up at once, as the mode says.
+            // Only a whole line that lights up at once starts out lit.
+            let line = synced.filter(|_| current).map(|lines| &lines[i]);
+            let by_word = line.is_some_and(|line| cfg.word_sync && line.word_timed());
+            let progress = cfg.mode == LyricsMode::Progress;
+            let following = line.filter(|_| by_word || progress);
+            let lit = if following.is_some() { unsung } else { active };
 
             let scale = 1.0 + (cfg.active_scale - 1.0) * nearness;
             let saved = g.scale_about(scale, anchor, y + height / 2.0);
             let color = with_alpha(mix(inactive, lit, glow), fade);
             g.draw_text_fx(layout, x, y, color, &decoration(ctx));
-            let filled = filling.map_or(Ok(()), |line| {
+            let filled = following.map_or(Ok(()), |line| {
                 let sung = with_alpha(active, glow * fade);
                 let feather = cfg.size * 0.4;
-                if cfg.mode == LyricsMode::Progress {
+                if !by_word {
                     return draw_progress(g, layout, line, (x, y), self.pos, sung, feather);
                 }
                 let colors = (sung, with_alpha(word_color, glow * fade));
+                let feather = progress.then_some(feather);
                 draw_sung(g, layout, line, (x, y), self.pos, colors, feather)
             });
             g.restore(saved);

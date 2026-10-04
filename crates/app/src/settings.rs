@@ -1424,15 +1424,15 @@ fn lyrics(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
             ui.group("")?;
             ui.toggle("Show", &mut l.enabled)?;
             ui.choice(
-                "Follows the song",
+                "What is being sung",
                 &mut l.mode,
                 &[
-                    (LyricsMode::Line, "Line by line"),
-                    (LyricsMode::Word, "Word by word"),
-                    (LyricsMode::Progress, "Line progress"),
+                    (LyricsMode::Complete, "Lights up at once"),
+                    (LyricsMode::Progress, "Fills as it is sung"),
                 ],
             )?;
-            ui.note("Word by word needs a song with timed words; others go line by line.")?;
+            ui.toggle("Word by word where available", &mut l.word_sync)?;
+            ui.note("Some songs have timed words. The rest are followed line by line.")?;
             ui.toggle("Card behind them", &mut l.card)?;
             ui.slider("Opacity", &mut l.opacity, 0.0, 1.0, 0.05)?;
 

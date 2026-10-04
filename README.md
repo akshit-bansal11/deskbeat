@@ -23,7 +23,7 @@ It is built as a light alternative to a Rainmeter setup. Widgets redraw only whe
 | Widget | What it shows |
 | --- | --- |
 | **Visualizer** | A spectrum of Spotify's audio only, not your games or calls. Bars, mirrored bars or a wave. |
-| **Lyrics** | Time-synced lyrics in three modes: line by line, word by word as each word is sung, or a sweep along the current line. Word timing comes from a LyricsPlus server and is never guessed: a song the server has no word times for goes line by line. Line timing comes from [LRCLIB](https://lrclib.net). Cached on disk. A song with no lyrics shows nothing. |
+| **Lyrics** | Time-synced lyrics, followed word by word where the song has timed words and line by line where it does not. What is being sung either lights up at once or fills as it is sung. Word timing comes from a LyricsPlus server and is never guessed. Line timing comes from [LRCLIB](https://lrclib.net). Cached on disk. A song with no lyrics shows nothing. |
 | **Player** | Album art, title, artist, a progress bar you can click to seek, and previous, play/pause and next. |
 | **Clock** | Day, time and date. |
 

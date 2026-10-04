@@ -19,7 +19,7 @@ const WIDGETS: { title: string; body: string }[] = [
   },
   {
     title: "Lyrics",
-    body: "Time-synced lyrics in three modes: line by line, word by word as each word is sung, or a sweep along the current line. Word timing comes from a LyricsPlus server and is never guessed; line timing comes from LRCLIB. Cached on disk.",
+    body: "Time-synced lyrics, followed word by word where the song has timed words and line by line where it does not. What is being sung either lights up at once or fills as it is sung. Word timing comes from a LyricsPlus server and is never guessed; line timing comes from LRCLIB. Cached on disk.",
   },
   {
     title: "Player",
@@ -75,7 +75,7 @@ const PANEL: { tab: string; covers: string }[] = [
   {
     tab: "Lyrics",
     covers:
-      "Show them, a card behind them, line by line, word by word or line progress, their position and size, alignment, font, size, weight, lines above and below, line spacing, how much larger the current line is and how lines fade with distance. Colours for the current line, the current word and the other lines, an outline, a shadow, and timing: show earlier or later, and the scroll time.",
+      "Show them, a card behind them, whether what is being sung lights up at once or fills, word by word where available, their position and size, alignment, font, size, weight, lines above and below, line spacing, how much larger the current line is and how lines fade with distance. Colours for the current line, the current word and the other lines, an outline, a shadow, and timing: show earlier or later, and the scroll time.",
   },
   {
     tab: "Visualizer",
@@ -142,9 +142,9 @@ const CONFIG: { key: string; value: string; means: string }[] = [
   },
   {
     key: "lyrics.mode",
-    value: '"line"',
+    value: '"complete"',
     means:
-      '"line" highlights the current line; "word" fills each word as it is sung, when the song has timed words; "progress" fills the line from its start to its end.',
+      '"complete" lights up what is being sung at once; "progress" fills it from its start to its end. With lyrics.word_sync that is each word, where the song has timed words, and the line otherwise.',
   },
   {
     key: "lyrics.offset_ms",
