@@ -125,6 +125,46 @@ pub fn clean_title(title: &str) -> String {
         .join(" ")
 }
 
+/// The name of the song alone, for showing: cut before the first thing
+/// Spotify appends to it. That is a dash with a space either side (a hyphen
+/// inside a name, as in `Locha-E-Ulfat`, is part of the name), a bracket,
+/// a `ft.` or `feat.` credit, and `from` or `with` when a quoted name
+/// follows, as in `From "Brahmastra"`. Bare `with` and `from` are left
+/// alone: `Stay With Me` is a title.
+pub fn short_title(title: &str) -> &str {
+    // ASCII lowercasing keeps byte offsets valid for slicing the original.
+    let lower = title.to_ascii_lowercase();
+    let is_word_char = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    let is_quote = |c: Option<char>| c.is_some_and(|c| "\"'\u{201c}\u{2018}".contains(c));
+
+    let mut cut = [" - ", "(", "["]
+        .iter()
+        .filter_map(|mark| lower.find(mark))
+        .min()
+        .unwrap_or(title.len());
+    for (word, needs_quote) in [
+        ("ft", false),
+        ("feat", false),
+        ("featuring", false),
+        ("with", true),
+        ("from", true),
+    ] {
+        for (at, _) in lower.match_indices(word) {
+            let before = lower[..at].chars().next_back();
+            let rest = &lower[at + word.len()..];
+            let whole = !is_word_char(before) && !is_word_char(rest.chars().next());
+            if whole && (!needs_quote || is_quote(rest.trim_start().chars().next())) {
+                cut = cut.min(at);
+            }
+        }
+    }
+
+    match title[..cut].trim() {
+        "" => title.trim(),
+        head => head,
+    }
+}
+
 /// First artist only: LRCLIB indexes the primary credit, not the full billing.
 pub fn primary_artist(artist: &str) -> &str {
     // ASCII lowercasing keeps byte offsets valid for slicing the original.
@@ -182,6 +222,29 @@ pub fn pick_best(records: Vec<Record>, wanted_ms: i64) -> Option<Record> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_shown_title_stops_before_what_spotify_appends() {
+        for (input, expected) in [
+            ("Locha-E-Ulfat", "Locha-E-Ulfat"),
+            ("Song - Radio Edit", "Song"),
+            ("Heeriye (feat. Arijit Singh)", "Heeriye"),
+            ("Song [Mono]", "Song"),
+            ("Song ft. Someone", "Song"),
+            ("Song Feat Someone", "Song"),
+            ("Kesariya From \"Brahmastra\"", "Kesariya"),
+            ("Song with \u{201c}Someone\u{201d}", "Song"),
+            // Words of the title itself are not credits.
+            ("Stay With Me", "Stay With Me"),
+            ("Lift Me Up", "Lift Me Up"),
+            ("Far From Home", "Far From Home"),
+            // Nothing left to show: keep it whole.
+            ("(Intro)", "(Intro)"),
+            ("  Plain  ", "Plain"),
+        ] {
+            assert_eq!(short_title(input), expected, "{input}");
+        }
+    }
 
     #[test]
     fn cleans_version_decorations_from_titles() {

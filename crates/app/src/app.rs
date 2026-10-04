@@ -11,7 +11,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 use deskbeat_core::color::{Rgba, parse_hex};
-use deskbeat_core::config::{Config, Layer};
+use deskbeat_core::config::{Config, Layer, LyricsMode};
 use deskbeat_core::lrclib::Query;
 use deskbeat_core::timefmt::LocalTime;
 use windows::Win32::Foundation::{
@@ -788,7 +788,7 @@ impl App {
             Lyrics::None
         };
         self.lyrics_gen += 1;
-        self.word_sync_on = self.cfg.lyrics.word_sync;
+        self.word_sync_on = self.wants_words();
         if let Ok(mut shared) = self.lyrics_shared.lock() {
             shared.track_gen = self.media.track_gen;
             shared.lyrics = Lyrics::None;
@@ -809,6 +809,11 @@ impl App {
                     .then(|| self.cfg.lyrics.word_servers.clone()),
             );
         }
+    }
+
+    /// Word times are only asked for when they would be shown.
+    fn wants_words(&self) -> bool {
+        self.cfg.lyrics.word_sync && self.cfg.lyrics.mode == LyricsMode::Word
     }
 
     fn host_index(&self, hwnd: HWND) -> Option<usize> {
@@ -1172,7 +1177,7 @@ impl App {
         }
 
         if self.cfg.lyrics.enabled == matches!(self.lyrics, Lyrics::None)
-            || self.cfg.lyrics.word_sync != self.word_sync_on
+            || self.wants_words() != self.word_sync_on
         {
             // Lyrics were just switched on with a track playing, or off, or
             // are now wanted from a different source.

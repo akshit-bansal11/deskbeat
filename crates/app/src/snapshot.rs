@@ -153,7 +153,7 @@ pub fn run(dir: &Path) -> Result<()> {
     }
     // One more to cover the options no preset turns on.
     let mut variant = Config::default();
-    variant.lyrics.mode = LyricsMode::Word;
+    variant.lyrics.mode = LyricsMode::Progress;
     variant.visualizer.style = VisualizerStyle::Wave;
     variant.visualizer.symmetric = true;
     variant.visualizer.card = true;

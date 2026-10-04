@@ -453,8 +453,12 @@ pub struct PlayerCfg {
     /// Size of the previous, play and next buttons.
     pub button_size: f32,
     pub button_color: String,
-    /// The most room the title and artist take before being cut short.
+    /// The most room the artist takes before being cut short. The title is
+    /// never cut.
     pub text_width: f32,
+    /// Show the name of the song alone, without the version, credits or
+    /// film Spotify appends to it. See `lrclib::short_title`.
+    pub short_title: bool,
     pub art: Spot,
     pub previous: Spot,
     pub play: Spot,
@@ -487,6 +491,7 @@ impl Default for PlayerCfg {
             button_size: 30.0,
             button_color: "text".to_owned(),
             text_width: 270.0,
+            short_title: true,
             art: Spot::default(),
             previous: Spot::default(),
             play: Spot::default(),
@@ -578,8 +583,12 @@ pub enum LyricsMode {
     /// Highlight the current line. Exact for LRCLIB, which carries line timing.
     #[default]
     Line,
-    /// Also highlight the current word. Word timing is usually an estimate.
+    /// Fill each word as it is sung, from the time a LyricsPlus server gives
+    /// for it. A track with no such timing is shown line by line: a word's
+    /// time is never guessed.
     Word,
+    /// Fill the current line from its start to its end as it is sung.
+    Progress,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

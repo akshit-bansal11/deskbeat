@@ -1214,6 +1214,7 @@ fn lyrics(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
         &[
             (LyricsMode::Line, "Line by line"),
             (LyricsMode::Word, "Word by word"),
+            (LyricsMode::Progress, "Line progress"),
         ],
     )?;
     ui.choice("Align", &mut l.align, &ALIGNS)?;
@@ -1225,8 +1226,6 @@ fn lyrics(ui: &mut Ui, cfg: &mut Config) -> Result<()> {
     ui.slider("Line spacing", &mut l.line_gap, 0.0, 2.0, 0.05)?;
     ui.slider("Current line size", &mut l.active_scale, 1.0, 1.6, 0.02)?;
     ui.slider("Fade with distance", &mut l.falloff, 0.0, 0.9, 0.05)?;
-    ui.toggle("Real word timing", &mut l.word_sync)?;
-    ui.note("Word timing comes from a LyricsPlus server, when it has the track.")?;
 
     ui.header("Colours")?;
     ui.color("Current line", &mut l.active_color, &THEME_COLORS)?;
