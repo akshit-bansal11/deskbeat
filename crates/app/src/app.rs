@@ -39,7 +39,7 @@ use crate::capture::{self, Audio};
 use crate::gfx::{Gfx, Surface};
 use crate::lyrics::{self, Lyrics, LyricsState};
 use crate::media::{self, Cmd, MediaState};
-use crate::menu::{Menu, Pick};
+use crate::menu::{EMBER, Menu, Pick};
 use crate::settings::{Panel, Status};
 use crate::tray::Tray;
 use crate::widgets::{Action, Ctx, Kind, Part, Wake, Widget};
@@ -600,7 +600,6 @@ impl App {
             (aw as f32 / self.scale) as i32,
             (ah as f32 / self.scale) as i32,
         );
-        let accent = self.palette.accent(&self.media);
         let mut cfg = self.cfg.clone();
         let Some(panel) = &mut self.settings else {
             return;
@@ -610,7 +609,7 @@ impl App {
             hidden: self.hidden,
             autostart: self.autostart,
         };
-        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, accent, status, area);
+        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, EMBER, status, area);
         let outcome = match drawn {
             Ok(outcome) => outcome,
             Err(error) => {
