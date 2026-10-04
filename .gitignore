@@ -20,3 +20,7 @@ Thumbs.db
 
 # Screen recordings the demo GIF is cut from. Too large for the repo.
 /assets/*.mp4
+
+# The Vercel CLI's link to the website's project. `vercel link` also writes a
+# .env.local, which the first block already ignores.
+.vercel
