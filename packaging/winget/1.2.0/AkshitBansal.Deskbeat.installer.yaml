@@ -10,7 +10,6 @@ ReleaseDate: 2026-10-04
 Installers:
 - Architecture: x64
   InstallerUrl: https://github.com/akshit-bansal11/deskbeat/releases/download/v1.2.0/Deskbeat-1.2.0.exe
-  # Not known until the release exists: the exe's line in its SHA256SUMS.txt, in capitals.
-  InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+  InstallerSha256: 420888882B1AD1E13E6EF3AE6F9584611EA9A1531EDB9E4E25DEDF7A1378622C
 ManifestType: installer
 ManifestVersion: 1.12.0
