@@ -93,7 +93,7 @@ fn text(
 }
 
 /// The Deskbeat mark, `side` across, with its top-left corner at `(x, y)`.
-fn mark(g: &Gfx, x: f32, y: f32, side: f32) {
+pub fn mark(g: &Gfx, x: f32, y: f32, side: f32) {
     let unit = side / 108.0;
     g.fill_round(rect(x, y, side, side), 26.0 * unit, PAPER);
     for (i, (left, height)) in MARK_BARS.into_iter().enumerate() {

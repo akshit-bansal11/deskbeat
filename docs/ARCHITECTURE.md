@@ -57,7 +57,7 @@ The clock and the player have no box. Each of their elements has its own positio
 
 The media session reports a position now and then, not continuously, and the reports jitter. The sync clock advances on its own between reports, ignores jitter inside a deadband, takes the median of recent errors so one outlier cannot move it, eases small corrections in over a few frames, and snaps on a seek or a resume.
 
-Word timing from a server is used as it is: words can overlap, as with background vocals, and can leave gaps. When only line timing is known, a line's time is spread over its words by length, which is a guess and is marked as one.
+Word timing from a server is used as it is: words can overlap, as with background vocals, and can leave gaps. When only line timing is known, a line's time is spread over its words by length, which is a guess and is marked as one; the lyrics widget never shows a guess, and draws such a line as a whole. The servers answer two requests in ten seconds, so requests to one server are spaced out across every fetch, and a refusal is asked again once.
 
 ## Settings and state
 

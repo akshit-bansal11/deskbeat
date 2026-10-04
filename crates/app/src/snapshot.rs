@@ -153,7 +153,7 @@ pub fn run(dir: &Path) -> Result<()> {
     }
     // One more to cover the options no preset turns on.
     let mut variant = Config::default();
-    variant.lyrics.mode = LyricsMode::Word;
+    variant.lyrics.mode = LyricsMode::Progress;
     variant.visualizer.style = VisualizerStyle::Wave;
     variant.visualizer.symmetric = true;
     variant.visualizer.card = true;
@@ -194,11 +194,20 @@ pub fn run(dir: &Path) -> Result<()> {
         println!("wrote {}", path.display());
     }
 
-    let tabs = settings::TABS.len() as u32;
-    let sheet = (settings::WIDTH as u32 * tabs, settings::HEIGHT as u32);
-    let path = dir.join("settings.png");
-    png(&wic, &path, sheet, settings_sheet)?;
-    println!("wrote {}", path.display());
+    // One page of each tab, and one of an element's own.
+    let panel = (settings::WIDTH as u32, settings::HEIGHT as u32);
+    for (name, tab, section) in [
+        ("general", 0, 0),
+        ("clock", 1, 0),
+        ("clock-day", 1, 1),
+        ("player-buttons", 2, 4),
+        ("lyrics", 3, 0),
+        ("visualizer", 4, 0),
+    ] {
+        let path = dir.join(format!("settings-{name}.png"));
+        png(&wic, &path, panel, |gfx| settings_page(gfx, tab, section))?;
+        println!("wrote {}", path.display());
+    }
 
     // The tray menu, with the pointer on its second row.
     let card = (menu::WIDTH as u32, menu::HEIGHT as u32);
@@ -309,28 +318,27 @@ fn scene(
     Ok(())
 }
 
-/// Every tab of the settings panel, side by side.
-fn settings_sheet(gfx: &mut Gfx) -> Result<()> {
+/// One section of one tab of the settings panel. The first has the colour
+/// picker open: nothing else can click it open here.
+fn settings_page(gfx: &mut Gfx, tab: usize, section: usize) -> Result<()> {
     let mut cfg = Config::default();
-    for tab in 0..settings::TABS.len() {
-        let mut view = if tab == 0 {
-            settings::View::with_picker_open()
-        } else {
-            settings::View::on_tab(tab)
-        };
-        gfx.set_transform(1.0, settings::WIDTH * tab as f32, 0.0);
-        view.paint(
-            gfx,
-            &mut cfg,
-            (settings::WIDTH, settings::HEIGHT),
-            menu::EMBER,
-            settings::Status {
-                edit: false,
-                hidden: false,
-                autostart: true,
-            },
-            (WIDTH as i32, HEIGHT as i32),
-        )?;
-    }
-    Ok(())
+    let mut view = if (tab, section) == (0, 0) {
+        settings::View::with_picker_open()
+    } else {
+        settings::View::on(tab, section)
+    };
+    view.paint(
+        gfx,
+        &mut cfg,
+        (settings::WIDTH, settings::HEIGHT),
+        menu::EMBER,
+        settings::Status {
+            edit: false,
+            hidden: false,
+            autostart: true,
+            scale: 1.25,
+        },
+        (WIDTH as i32, HEIGHT as i32),
+    )
+    .map(|_| ())
 }

@@ -19,7 +19,7 @@ const WIDGETS: { title: string; body: string }[] = [
   },
   {
     title: "Lyrics",
-    body: "Time-synced lyrics, highlighted by line or word by word as each word is sung. Word timing comes from a LyricsPlus server, line timing from LRCLIB when that has nothing. Cached on disk.",
+    body: "Time-synced lyrics, followed word by word where the song has timed words and line by line where it does not. What is being sung either lights up at once or fills as it is sung. Word timing comes from a LyricsPlus server and is never guessed; line timing comes from LRCLIB. Cached on disk.",
   },
   {
     title: "Player",
@@ -65,17 +65,17 @@ const PANEL: { tab: string; covers: string }[] = [
   {
     tab: "Clock",
     covers:
-      "Show it, put a card behind it, reset its positions. For each of the day, the time and the date: show it, pick what it shows, and its font, size, weight, colour, opacity, letter spacing and capitals, which way it runs (across, down or up) and whether its letters stand upright or lie sideways.",
+      "Show it, put a card behind it, put its three rows back in place. A page each for the day, the time and the date: show it, pick what it shows, its position in screen pixels, and its font, size, weight, colour, opacity, letter spacing and capitals, which way it runs (across, down or up) and whether its letters stand upright or lie sideways.",
   },
   {
     tab: "Player",
     covers:
-      "Show it, and its background: blurred album art, a card, or none. Two ready-made arrangements, Art on the left and Centred stack. Album art size and corner rounding. The progress bar's length, thickness, colour and unplayed part. The buttons' size and colour. The title, artist, time played and track length, each styled like any other text, with the same Runs and Letters rows.",
+      "Show it, and its background: blurred album art, a card, or none. Two ready-made arrangements, Art on the left and Centred stack. Album art size and corner rounding. The progress bar's length, thickness, colour and unplayed part. The buttons' size and colour. The title, artist, time played and track length, each on a page of its own, positioned and styled like any other text, with the same Runs and Letters rows. Song name only, for the title.",
   },
   {
     tab: "Lyrics",
     covers:
-      "Show them, a card behind them, line by line or word by word, alignment, font, size, weight, lines above and below, line spacing, how much larger the current line is and how lines fade with distance. Real word timing on or off. Colours for the current line, the current word and the other lines, an outline, a shadow, and timing: show earlier or later, and the scroll time.",
+      "Show them, a card behind them, whether what is being sung lights up at once or fills, word by word where available, their position and size, alignment, font, size, weight, lines above and below, line spacing, how much larger the current line is and how lines fade with distance. Colours for the current line, the current word and the other lines, an outline, a shadow, and timing: show earlier or later, and the scroll time.",
   },
   {
     tab: "Visualizer",
@@ -142,9 +142,9 @@ const CONFIG: { key: string; value: string; means: string }[] = [
   },
   {
     key: "lyrics.mode",
-    value: '"line"',
+    value: '"complete"',
     means:
-      '"line" highlights the current line; "word" also highlights the current word.',
+      '"complete" lights up what is being sung at once; "progress" fills it from its start to its end. With lyrics.word_sync that is each word, where the song has timed words, and the line otherwise.',
   },
   {
     key: "lyrics.offset_ms",

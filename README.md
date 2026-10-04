@@ -23,7 +23,7 @@ It is built as a light alternative to a Rainmeter setup. Widgets redraw only whe
 | Widget | What it shows |
 | --- | --- |
 | **Visualizer** | A spectrum of Spotify's audio only, not your games or calls. Bars, mirrored bars or a wave. |
-| **Lyrics** | Time-synced lyrics, highlighted by line or word by word as each word is sung. Word timing comes from a LyricsPlus server, line timing from [LRCLIB](https://lrclib.net) when that has nothing. Cached on disk. |
+| **Lyrics** | Time-synced lyrics, followed word by word where the song has timed words and line by line where it does not. What is being sung either lights up at once or fills as it is sung. Word timing comes from a LyricsPlus server and is never guessed. Line timing comes from [LRCLIB](https://lrclib.net). Cached on disk. A song with no lyrics shows nothing. |
 | **Player** | Album art, title, artist, a progress bar you can click to seek, and previous, play/pause and next. |
 | **Clock** | Day, time and date. |
 
@@ -50,7 +50,9 @@ Hotkeys can be turned off in settings.
 
 ## Customise
 
-The settings panel covers the common choices: four one-click looks, fonts, colours, sizes, which widgets show, where they sit, and how the visualizer moves.
+The settings panel has a sidebar with a page for each widget, and each page is split into its parts: the clock into the widget, the day, the time and the date, the player into its art, title, artist, buttons, bar and both times. Every part has its own position, shown in the display's own pixels, on sliders notched at every quarter of the screen.
+
+The player shows the name of the song alone, without the version, credits or film that Spotify appends (`player.short_title`), and never cuts it short.
 
 The clock and the player have no box. In edit layout the day, time and date, and the player's art, title, artist, each button, the progress bar and both times can each be dragged anywhere; the one under the pointer is outlined. Nothing else is drawn in edit layout: no frames and no labels. Shift+click selects several elements, which then drag together. The space between elements does nothing, so nothing moves as a group unless you select it. The Player tab has two ready-made arrangements to start from.
 

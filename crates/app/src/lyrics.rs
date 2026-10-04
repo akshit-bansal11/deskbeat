@@ -2,9 +2,10 @@
 //! only ever downloaded once. LRCLIB answers first, with line timing; a
 //! LyricsPlus server then replaces that with word timing when it has any.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use deskbeat_core::lrc::{parse_lrc, parse_plain};
 use deskbeat_core::lrclib::{self, Query, Record};
@@ -25,6 +26,10 @@ const USER_AGENT: &str = concat!(
 );
 /// A "no lyrics" answer is asked again after this long: LRCLIB gains tracks.
 const MISS_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+/// A LyricsPlus server answers two requests in ten seconds and refuses the
+/// third, so requests to one server are kept this far apart.
+const WORD_REQUEST_GAP: Duration = Duration::from_millis(5200);
+const TOO_MANY_REQUESTS: i32 = 429;
 
 #[derive(Default)]
 pub enum Lyrics {
@@ -93,8 +98,14 @@ pub fn fetch(
         }
         // The servers can be slow, so the line-timed answer goes up first.
         publish(lookup(&query));
+        // A track that was skipped past is not worth one of the few requests.
+        let wanted = || {
+            shared
+                .lock()
+                .is_ok_and(|state| state.track_gen == track_gen)
+        };
         if known.is_none()
-            && let Some(lines) = download_words(&query, &servers, &path)
+            && let Some(lines) = download_words(&query, &servers, &path, &wanted)
         {
             publish(Lyrics::Synced(lines));
         }
@@ -106,8 +117,25 @@ pub fn words(query: &Query, servers: &[String]) -> Option<Vec<Line>> {
     let path = cache_path(query, "words.json");
     match cached_words(&path, query.duration_ms) {
         Some(known) => known,
-        None => download_words(query, servers, &path),
+        None => download_words(query, servers, &path, &|| true),
     }
+}
+
+/// A request to a LyricsPlus server, held back until that server's last
+/// one is `WORD_REQUEST_GAP` old. Every fetch thread waits its turn here.
+fn paced_get(client: &HttpClient, server: &str, url: &str) -> Option<(i32, String)> {
+    static LAST: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+    let mut last = LAST.lock().ok()?;
+    let last = last.get_or_insert_with(HashMap::new);
+    if let Some(wait) = last
+        .get(server)
+        .and_then(|at| WORD_REQUEST_GAP.checked_sub(at.elapsed()))
+    {
+        std::thread::sleep(wait);
+    }
+    let answer = get(client, url);
+    last.insert(server.to_owned(), Instant::now());
+    answer
 }
 
 /// `Some(None)` is a remembered miss, stored as an empty file.
@@ -121,28 +149,42 @@ fn cached_words(path: &Path, duration_ms: i64) -> Option<Option<Vec<Line>>> {
     lyricsplus::parse(&body, duration_ms).map(Some)
 }
 
-/// Asks each server in turn. A miss is only remembered when a server said
-/// so; servers that are down or rate-limited say nothing about the track.
-fn download_words(query: &Query, servers: &[String], path: &Path) -> Option<Vec<Line>> {
+/// Asks each server in turn, the cleaned title first: it is the one the
+/// servers usually know. A miss is only remembered when a server said so;
+/// servers that are down or rate-limited say nothing about the track. A
+/// server that refuses for asking too often is asked once more.
+fn download_words(
+    query: &Query,
+    servers: &[String],
+    path: &Path,
+    wanted: &dyn Fn() -> bool,
+) -> Option<Vec<Line>> {
     let client = client()?;
     let mut missing = false;
-    for attempt in &lrclib::attempts(query) {
-        for server in servers {
-            match get(&client, &lyricsplus::url(server, attempt)) {
-                Some((200, body)) => {
-                    if let Some(lines) = lyricsplus::parse(&body, query.duration_ms) {
-                        write_text(path, &body);
-                        return Some(lines);
+    for attempt in lrclib::attempts(query).iter().rev() {
+        'servers: for server in servers {
+            let url = lyricsplus::url(server, attempt);
+            for _ in 0..2 {
+                if !wanted() {
+                    return None;
+                }
+                match paced_get(&client, server, &url) {
+                    Some((200, body)) => {
+                        if let Some(lines) = lyricsplus::parse(&body, query.duration_ms) {
+                            write_text(path, &body);
+                            return Some(lines);
+                        }
+                        // Line-timed only, or another recording of the song.
+                        missing = true;
+                        break 'servers;
                     }
-                    // Line-timed only, or another recording of the song.
-                    missing = true;
-                    break;
+                    Some((404, _)) => {
+                        missing = true;
+                        break 'servers;
+                    }
+                    Some((TOO_MANY_REQUESTS, _)) => {}
+                    _ => break,
                 }
-                Some((404, _)) => {
-                    missing = true;
-                    break;
-                }
-                _ => {}
             }
         }
     }

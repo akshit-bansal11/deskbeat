@@ -5,6 +5,7 @@ use deskbeat_core::clock::{Anchor, Clock, find_line_index, find_word_index};
 use deskbeat_core::color::{Rgba, mix, parse_hex, with_alpha};
 use deskbeat_core::config::{Align, LyricsMode};
 use deskbeat_core::timing::Line;
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 use windows::core::Result;
 
@@ -48,6 +49,8 @@ pub struct LyricsView {
 struct Place {
     active: Option<usize>,
     lit: bool,
+    /// The current line is being followed word by word.
+    by_word: bool,
     word: Option<usize>,
     /// Track position, in ms, of the next change. `i64::MAX` when there is none.
     next_change: i64,
@@ -57,6 +60,8 @@ fn place_synced(lines: &[Line], pos: i64, by_word: bool) -> Place {
     let active = find_line_index(lines, pos);
     let line = active.map(|i| &lines[i]);
     let lit = line.is_some_and(|l| pos < l.end_ms);
+    // Only words whose times were sourced are followed.
+    let by_word = by_word && line.is_some_and(Line::word_timed);
     let word = line
         .filter(|_| lit && by_word)
         .and_then(|l| find_word_index(&l.words, pos));
@@ -80,6 +85,7 @@ fn place_synced(lines: &[Line], pos: i64, by_word: bool) -> Place {
     Place {
         active,
         lit,
+        by_word: lit && by_word,
         word,
         next_change,
     }
@@ -93,6 +99,7 @@ fn place_plain(count: usize, pos: i64, duration_ms: f64) -> Place {
         return Place {
             active: None,
             lit: false,
+            by_word: false,
             word: None,
             next_change: i64::MAX,
         };
@@ -102,6 +109,7 @@ fn place_plain(count: usize, pos: i64, duration_ms: f64) -> Place {
     Place {
         active: Some(index),
         lit: false,
+        by_word: false,
         word: None,
         next_change: ((index + 1) as f64 * per_line) as i64 + 1,
     }
@@ -142,26 +150,6 @@ impl LyricsView {
         self.layout_width = width;
         Ok(())
     }
-
-    fn status(&self, g: &mut Gfx, message: &str, w: f32, h: f32, ctx: &Ctx) -> Result<()> {
-        let cfg = &ctx.cfg.lyrics;
-        let style = TextStyle {
-            font: lyric_font(g, ctx),
-            size: (cfg.size * 0.6).max(13.0),
-            weight: 500,
-            align: cfg.align,
-            wrap: true,
-        };
-        let pad = if cfg.card { 22.0 } else { 6.0 };
-        let layout = g.layout(message, &style, w - 2.0 * pad, h)?;
-        let height = Gfx::measure(&layout).1;
-        let color = with_alpha(
-            named_color(&cfg.inactive_color, ctx),
-            cfg.inactive_opacity * cfg.opacity,
-        );
-        g.draw_text_fx(&layout, pad, (h - height) / 2.0, color, &decoration(ctx));
-        Ok(())
-    }
 }
 
 /// The lyrics font, falling back to the theme font when it is not set or
@@ -197,9 +185,56 @@ fn word_ranges(line: &Line) -> impl Iterator<Item = (u32, u32)> + '_ {
     })
 }
 
+/// Paints `done`, from 0 to 1, of a run of text over what is already drawn:
+/// the colour arrives behind an edge `feather` wide that crosses `boxes`,
+/// the run's box on each line it wraps onto, one after another.
+fn sweep(
+    g: &Gfx,
+    layout: &IDWriteTextLayout,
+    (x, y): (f32, f32),
+    boxes: &[D2D_RECT_F],
+    done: f32,
+    color: Rgba,
+    feather: f32,
+) -> Result<()> {
+    let total: f32 = boxes.iter().map(|b| b.right - b.left).sum();
+    // The edge travels the run's width plus its own, so the run is empty
+    // when it starts and full when it ends.
+    // ponytail: fills left to right, wrong for right-to-left scripts;
+    // flip the gradient by the layout's reading direction if that matters.
+    let mut reach = done.clamp(0.0, 1.0) * (total + feather);
+    for clip in boxes {
+        if reach <= 0.0 {
+            break;
+        }
+        let edge = x + clip.left + reach;
+        let brush = g.gradient(edge - feather, edge, color, with_alpha(color, 0.0))?;
+        g.draw_text_with(layout, x, y, &brush, *clip);
+        reach -= clip.right - clip.left;
+    }
+    Ok(())
+}
+
+/// Fills the whole of the current line, from its start to its end.
+fn draw_progress(
+    g: &Gfx,
+    layout: &IDWriteTextLayout,
+    line: &Line,
+    at: (f32, f32),
+    pos: i64,
+    color: Rgba,
+    feather: f32,
+) -> Result<()> {
+    let length = line.text.encode_utf16().count() as u32;
+    let boxes = Gfx::range_rects(layout, 0, length);
+    let done = (pos - line.start_ms) as f32 / (line.end_ms - line.start_ms).max(1) as f32;
+    sweep(g, layout, at, &boxes, done, color, feather)
+}
+
 /// Paints the sung part of the current line over its unsung text: the words
-/// that are over in `sung`, and as much of each word in progress as has been
-/// sung in `singing`, behind an edge `feather` wide.
+/// that are over in `sung`, and each word in progress in `singing`. With a
+/// `feather`, as much of that word as has been sung, behind an edge that
+/// wide; without one, the whole word from the moment it starts.
 fn draw_sung(
     g: &Gfx,
     layout: &IDWriteTextLayout,
@@ -207,29 +242,22 @@ fn draw_sung(
     (x, y): (f32, f32),
     pos: i64,
     (sung, singing): (Rgba, Rgba),
-    feather: f32,
+    feather: Option<f32>,
 ) -> Result<()> {
     for (word, (start, len)) in line.words.iter().zip(word_ranges(line)) {
         if pos < word.start_ms {
             continue;
         }
         let boxes = Gfx::range_rects(layout, start, len);
-        if pos >= word.end_ms {
+        let Some(feather) = feather.filter(|_| pos < word.end_ms) else {
+            let color = if pos < word.end_ms { singing } else { sung };
             for clip in boxes {
-                g.draw_text_clipped(layout, x, y, sung, clip);
+                g.draw_text_clipped(layout, x, y, color, clip);
             }
             continue;
-        }
+        };
         let done = (pos - word.start_ms) as f32 / (word.end_ms - word.start_ms) as f32;
-        // The edge travels the word's width plus its own, so the word is
-        // empty when it starts and full when it ends.
-        // ponytail: fills left to right, wrong for right-to-left scripts;
-        // flip the gradient by the layout's reading direction if that matters.
-        for clip in boxes {
-            let edge = x + clip.left + done * (clip.right - clip.left + feather);
-            let brush = g.gradient(edge - feather, edge, singing, with_alpha(singing, 0.0))?;
-            g.draw_text_with(layout, x, y, &brush, clip);
-        }
+        sweep(g, layout, (x, y), &boxes, done, singing, feather)?;
     }
     Ok(())
 }
@@ -268,7 +296,7 @@ impl Widget for LyricsView {
 
         let pos = self.clock.read() as i64;
         let place = match ctx.lyrics {
-            Lyrics::Synced(lines) => place_synced(lines, pos, cfg.mode == LyricsMode::Word),
+            Lyrics::Synced(lines) => place_synced(lines, pos, cfg.word_sync),
             Lyrics::Plain(lines) => place_plain(lines.len(), pos, media.duration_ms),
             _ => place_plain(0, pos, 0.0),
         };
@@ -276,9 +304,16 @@ impl Widget for LyricsView {
         if (place.active, place.lit, place.word) != (self.active, self.lit, self.word) {
             dirty = true;
         }
-        // A word in progress is filling, so every new position is a new picture.
-        let filling = place.word.is_some() && pos != self.pos;
-        dirty |= filling;
+        // A word or a line in progress is filling, so every new position is
+        // a new picture. Words that light up whole only change at the times
+        // this is woken for, and are redrawn at each.
+        let in_progress = if place.by_word {
+            place.word.is_some()
+        } else {
+            place.lit
+        };
+        let filling = cfg.mode == LyricsMode::Progress && in_progress && pos != self.pos;
+        dirty |= filling || (place.by_word && pos != self.pos);
         self.active = place.active;
         self.lit = place.lit;
         self.word = place.word;
@@ -324,23 +359,24 @@ impl Widget for LyricsView {
     fn draw(&mut self, g: &mut Gfx, w: f32, h: f32, ctx: &Ctx) -> Result<()> {
         let cfg = &ctx.cfg.lyrics;
         let o = cfg.opacity;
-        if cfg.card {
-            draw_card(g, w, h, ctx, o);
-        }
 
         let synced = match ctx.lyrics {
             Lyrics::Synced(lines) => Some(lines),
             _ => None,
         };
+        // A track with no lyrics shows nothing at all, not even the card.
         let texts: Vec<&str> = match ctx.lyrics {
             Lyrics::Synced(lines) => lines.iter().map(|l| l.text.as_str()).collect(),
             Lyrics::Plain(lines) => lines.iter().map(String::as_str).collect(),
-            Lyrics::Missing => return self.status(g, "No lyrics for this track", w, h, ctx),
-            Lyrics::Instrumental => return self.status(g, "Instrumental", w, h, ctx),
-            Lyrics::None | Lyrics::Loading => return Ok(()),
+            Lyrics::Missing | Lyrics::Instrumental | Lyrics::None | Lyrics::Loading => {
+                return Ok(());
+            }
         };
         if texts.is_empty() {
             return Ok(());
+        }
+        if cfg.card {
+            draw_card(g, w, h, ctx, o);
         }
 
         let pad = if cfg.card { 22.0 } else { 6.0 };
@@ -401,23 +437,29 @@ impl Widget for LyricsView {
             // Size and highlight arrive with the line as it scrolls to the centre.
             let nearness = (1.0 - distance.abs()).clamp(0.0, 1.0);
             let glow = if current { nearness } else { 0.0 };
-            // In word mode the current line starts out unsung and is filled
-            // in word by word; otherwise all of it is lit at once.
-            let by_word = synced
-                .filter(|_| current && cfg.mode == LyricsMode::Word)
-                .map(|lines| &lines[i]);
-            let lit = if by_word.is_some() { unsung } else { active };
+            // The current line is followed word by word when the time of
+            // each word is known, and as a whole otherwise. Either way what
+            // is being sung fills, or lights up at once, as the mode says.
+            // Only a whole line that lights up at once starts out lit.
+            let line = synced.filter(|_| current).map(|lines| &lines[i]);
+            let by_word = line.is_some_and(|line| cfg.word_sync && line.word_timed());
+            let progress = cfg.mode == LyricsMode::Progress;
+            let following = line.filter(|_| by_word || progress);
+            let lit = if following.is_some() { unsung } else { active };
 
             let scale = 1.0 + (cfg.active_scale - 1.0) * nearness;
             let saved = g.scale_about(scale, anchor, y + height / 2.0);
             let color = with_alpha(mix(inactive, lit, glow), fade);
             g.draw_text_fx(layout, x, y, color, &decoration(ctx));
-            let filled = by_word.map_or(Ok(()), |line| {
-                let colors = (
-                    with_alpha(active, glow * fade),
-                    with_alpha(word_color, glow * fade),
-                );
-                draw_sung(g, layout, line, (x, y), self.pos, colors, cfg.size * 0.4)
+            let filled = following.map_or(Ok(()), |line| {
+                let sung = with_alpha(active, glow * fade);
+                let feather = cfg.size * 0.4;
+                if !by_word {
+                    return draw_progress(g, layout, line, (x, y), self.pos, sung, feather);
+                }
+                let colors = (sung, with_alpha(word_color, glow * fade));
+                let feather = progress.then_some(feather);
+                draw_sung(g, layout, line, (x, y), self.pos, colors, feather)
             });
             g.restore(saved);
             filled?;
@@ -459,7 +501,12 @@ mod tests {
 
     #[test]
     fn word_mode_wakes_at_word_boundaries() {
-        let lines = lines();
+        let mut lines = lines();
+        // Times worked out from the line's length are not followed.
+        assert_eq!(place_synced(&lines, 10_000, true).word, None);
+        for word in &mut lines[0].words {
+            word.synthesized = false;
+        }
         let place = place_synced(&lines, 10_000, true);
         assert_eq!(place.word, Some(0));
         assert_eq!(place.next_change, lines[0].words[0].end_ms);

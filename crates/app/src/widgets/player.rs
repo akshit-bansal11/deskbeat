@@ -3,6 +3,7 @@
 
 use deskbeat_core::color::{Rgba, with_alpha};
 use deskbeat_core::config::{Align, Label, PlayerBackground, PlayerPart};
+use deskbeat_core::lrclib::short_title;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::ID2D1Bitmap;
 use windows::core::Result;
@@ -19,6 +20,8 @@ use crate::media::BLUR_SIDE;
 const BAR_SLOP: f32 = 9.0;
 /// Room for a track time such as 1:23:45, at any size.
 const TIME_ROOM: f32 = 600.0;
+/// The title is never cut short, however long: the window grows to hold it.
+const TITLE_ROOM: f32 = 8000.0;
 /// Glyph size as a share of the button: the play glyph is drawn larger.
 const GLYPH_SHARE: f32 = 0.47;
 const PLAY_GLYPH_SHARE: f32 = 0.57;
@@ -194,14 +197,12 @@ impl Widget for Player {
             };
             return self.text(g, PlayerPart::Title, IDLE_MESSAGE, &idle, p.text_width, ctx);
         }
-        self.text(
-            g,
-            PlayerPart::Title,
-            &media.title,
-            &p.title,
-            p.text_width,
-            ctx,
-        )?;
+        let title = if p.short_title {
+            short_title(&media.title)
+        } else {
+            &media.title
+        };
+        self.text(g, PlayerPart::Title, title, &p.title, TITLE_ROOM, ctx)?;
         self.text(
             g,
             PlayerPart::Artist,

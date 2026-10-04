@@ -29,6 +29,14 @@ pub struct Line {
     pub text: String,
 }
 
+impl Line {
+    /// Whether the time each word is sung came from a source. A line whose
+    /// word times were worked out from its own length has none to show.
+    pub fn word_timed(&self) -> bool {
+        self.words.iter().any(|word| !word.synthesized)
+    }
+}
+
 /// The text of a line: a space after every word, except between the
 /// syllables of one word.
 pub fn join_words(words: &[Word]) -> String {
