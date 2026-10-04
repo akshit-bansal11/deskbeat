@@ -255,10 +255,13 @@ impl View {
 
     /// A view opened on one section of one tab, with the pointer off the panel.
     pub fn on(tab: usize, section: usize) -> Self {
-        let mut view = Self::default();
-        view.tab = tab;
-        view.section[tab] = section;
-        view
+        let mut sections = [0; 5];
+        sections[tab] = section;
+        Self {
+            tab,
+            section: sections,
+            ..Self::default()
+        }
     }
 
     /// Paints a `w` by `h` panel at the origin and applies whatever the
