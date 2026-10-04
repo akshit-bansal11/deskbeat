@@ -131,6 +131,11 @@ struct Host {
     widget: Box<dyn Widget>,
     /// Size in physical pixels.
     size: (i32, i32),
+    /// Where the widget's box starts inside its window, and the box's size,
+    /// in display-independent pixels. The box is the whole window except
+    /// for a fitted widget in edit mode, whose window covers the work area.
+    origin: (f32, f32),
+    extent: (f32, f32),
     visible: bool,
     /// Hidden behind a window that covers its monitor: not ticked, not drawn.
     paused: bool,
@@ -322,6 +327,8 @@ pub fn run() -> Result<()> {
             surface: app.gfx.surface(hwnd, 100, 100)?,
             widget: kind.create(),
             size: (100, 100),
+            origin: (0.0, 0.0),
+            extent: (100.0, 100.0),
             visible: false,
             paused: false,
             dirty: true,
@@ -469,15 +476,16 @@ impl App {
                 if self.edit {
                     // Tell the window which boxes are elements to drag.
                     let px = |dip: f32| (dip * self.scale).round() as i32;
+                    let (ox, oy) = host.origin;
                     let boxes: Vec<RECT> = host
                         .widget
                         .parts()
                         .iter()
                         .map(|(_, r)| RECT {
-                            left: px(r.left),
-                            top: px(r.top),
-                            right: px(r.right),
-                            bottom: px(r.bottom),
+                            left: px(r.left + ox),
+                            top: px(r.top + oy),
+                            right: px(r.right + ox),
+                            bottom: px(r.bottom + oy),
                         })
                         .collect();
                     window::set_parts(host.hwnd, &boxes, host.kind.fitted());
@@ -758,7 +766,9 @@ impl App {
         if self.edit {
             let (left, top, _, _) = window::bounds(hwnd);
             let dip = |px: i32| px as f32 / self.scale;
-            self.drag_part(index, kind, (dip(x), dip(y)), (dip(left + x), dip(top + y)));
+            let (ox, oy) = self.hosts[index].origin;
+            let at = (dip(x) - ox, dip(y) - oy);
+            self.drag_part(index, kind, at, (dip(left + x), dip(top + y)));
             return;
         }
         let host = &mut self.hosts[index];
@@ -1124,12 +1134,31 @@ impl App {
         for host in &mut self.hosts {
             let frame = host.kind.placed(&self.cfg, (aw as f32 / scale) as i32);
             let (left, top) = frame.origin((aw as f32 / scale) as i32, (ah as f32 / scale) as i32);
-            let bounds = (
-                ax + px(left as f32),
-                ay + px(top as f32),
-                px(frame.w as f32).max(1),
-                px(frame.h as f32).max(1),
-            );
+            // In edit mode a fitted widget's window covers the work area and
+            // the widget is drawn at its place inside it. Re-wrapping the
+            // window while an element is dragged moved it a frame before the
+            // elements were redrawn, which made the other elements jump.
+            let spread = self.edit && host.kind.fitted();
+            let bounds = if spread {
+                (ax, ay, aw.max(1), ah.max(1))
+            } else {
+                (
+                    ax + px(left as f32),
+                    ay + px(top as f32),
+                    px(frame.w as f32).max(1),
+                    px(frame.h as f32).max(1),
+                )
+            };
+            let (origin, extent) = if spread {
+                ((left as f32, top as f32), (frame.w as f32, frame.h as f32))
+            } else {
+                (
+                    (0.0, 0.0),
+                    (bounds.2 as f32 / scale, bounds.3 as f32 / scale),
+                )
+            };
+            host.dirty |= (host.origin, host.extent) != (origin, extent);
+            (host.origin, host.extent) = (origin, extent);
             if window::bounds(host.hwnd) != bounds {
                 window::set_bounds(host.hwnd, bounds);
             }
@@ -1185,9 +1214,9 @@ impl App {
 /// edit mode: the selected ones and the one under the pointer. Nothing else
 /// marks a widget's bounds.
 fn draw_host(gfx: &mut Gfx, host: &mut Host, ctx: &Ctx, scale: f32, lit: &[u8]) -> Result<()> {
-    let (w, h) = (host.size.0 as f32 / scale, host.size.1 as f32 / scale);
+    let ((x, y), (w, h)) = (host.origin, host.extent);
     gfx.begin(&host.surface);
-    gfx.set_transform(scale, 0.0, 0.0);
+    gfx.set_transform(scale, x * scale, y * scale);
     let drawn = host.widget.draw(gfx, w, h, ctx);
     for (id, r) in host.widget.parts() {
         if lit.contains(id) {

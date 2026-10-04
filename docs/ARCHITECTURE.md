@@ -51,7 +51,7 @@ Other threads never touch a window. They write to shared state and post a messag
 
 Each widget is its own layered, click-through, no-activate tool window with a DirectComposition swap chain, drawn with Direct2D and DirectWrite through one shared device. Widgets sit at the bottom of the window stack, above the desktop and under every app. A widget under a maximized or fullscreen window is not drawn.
 
-The clock and the player have no box. Each of their elements has its own position, and the window is wrapped around whatever was drawn. The lyrics and the visualizer keep a frame, because it is what sizes them.
+The clock and the player have no box. Each of their elements has its own position, and the window is wrapped around whatever was drawn. In edit mode that window covers the work area instead and does not move, so dragging one element cannot disturb the others; the space between elements passes clicks through. The lyrics and the visualizer keep a frame, because it is what sizes them.
 
 ## Keeping lyrics in time
 
