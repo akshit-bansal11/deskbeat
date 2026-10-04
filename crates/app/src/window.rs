@@ -146,6 +146,9 @@ fn lparam_point(lp: LPARAM) -> (i32, i32) {
     )
 }
 
+/// `HTTRANSPARENT` (-1), in the unsigned type of the other hit-test codes.
+const HT_THROUGH: u32 = u32::MAX;
+
 fn edit_hit_test(hwnd: HWND, (x, y): (i32, i32)) -> u32 {
     let mut r = RECT::default();
     if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() {
@@ -155,10 +158,10 @@ fn edit_hit_test(hwnd: HWND, (x, y): (i32, i32)) -> u32 {
     if on_part(hwnd, x - r.left, y - r.top) {
         return HTCLIENT;
     }
-    // A window wrapped around its elements has no edges of its own to drag;
-    // the space between elements moves them all together.
+    // A widget made only of its elements has nothing else to grab: the
+    // space between them belongs to whatever window of ours is underneath.
     if FITTED.with_borrow(|windows| windows.contains(&(hwnd.0 as isize))) {
-        return HTCAPTION;
+        return HT_THROUGH;
     }
     let border = (12 * dpi(hwnd) / 96) as i32;
     let (left, right) = (x < r.left + border, x >= r.right - border);
@@ -233,7 +236,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         }
         WM_ERASEBKGND => return LRESULT(1),
         WM_NCHITTEST if is_widget && EDIT.get() => {
-            return LRESULT(edit_hit_test(hwnd, lparam_point(lp)) as isize);
+            // Through i32, so that `HT_THROUGH` arrives as -1.
+            return LRESULT(edit_hit_test(hwnd, lparam_point(lp)) as i32 as isize);
         }
         WM_GETMINMAXINFO if is_widget => {
             // SAFETY: for this message lparam points at a MINMAXINFO owned by the caller.

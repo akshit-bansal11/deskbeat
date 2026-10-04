@@ -11,6 +11,14 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 - A new mark: four sound bars, centred like a waveform, that draw the letter
   D. The README shows a recording of the app instead of a rendered still.
   The tray icon shows the same mark.
+- In Edit layout the space between the elements of the clock and the player
+  no longer moves them all together. Every element moves alone; Shift+click
+  several to move them as one.
+
+### Fixed
+
+- Dragging one element of the clock or the player made its other elements
+  jump or shimmer from side to side.
 
 ## [1.0.1] - 2026-10-03
 
