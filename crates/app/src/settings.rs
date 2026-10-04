@@ -660,13 +660,18 @@ impl Ui<'_> {
         if !self.in_card {
             return;
         }
+        // Only the half below the last row is painted: the rest would
+        // cover that row's controls.
         let cap = rect(
             self.left,
             self.y - CARD_RADIUS,
             self.width,
             2.0 * CARD_RADIUS,
         );
+        self.g
+            .push_clip(rect(self.left, self.y, self.width, CARD_RADIUS));
         self.g.fill_round(cap, CARD_RADIUS, CARD);
+        self.g.pop_clip();
         self.y += CARD_RADIUS;
         self.in_card = false;
     }

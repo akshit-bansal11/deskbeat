@@ -43,7 +43,7 @@ const WIDGETS: { title: string; Icon: LucideIcon; body: string }[] = [
   {
     title: "Lyrics",
     Icon: MicVocal,
-    body: "Time-synced lyrics, highlighted by line or word by word as each word is sung. Word timing comes from a LyricsPlus server, line timing from LRCLIB when that has nothing. Cached on disk.",
+    body: "Time-synced lyrics in three modes: line by line, word by word as each word is sung, or a sweep along the current line. Word timing comes from a LyricsPlus server and is never guessed; line timing comes from LRCLIB. Cached on disk.",
   },
   {
     title: "Player",

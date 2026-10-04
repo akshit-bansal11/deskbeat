@@ -6,6 +6,39 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A third lyric mode, line progress: the current line fills from its start
+  to its end as it is sung.
+- Sliders for where each element of the clock and the player sits, and for
+  the lyrics and the visualizer, in the display's own pixels, with a notch at
+  every quarter of the screen that the knob jumps onto.
+- `player.short_title`, on by default: the player shows the name of the song
+  alone. The title is cut before a dash with a space either side, a bracket,
+  `ft.` or `feat.`, and `from` or `with` followed by a quoted name. A hyphen
+  inside a name stays, and so do `with` and `from` as words of the title.
+
+### Changed
+
+- The settings panel is reorganised: a sidebar of five pages, each split
+  into its parts, with the rows of one part in cards. Every setting has one
+  row. The clock's day no longer offers "Saturday, 3 October", which is the
+  date's job, and the day and date no longer offer "Hidden" beside their Show
+  switch. "Measured from" and "Real word timing" are gone from the panel.
+- Word by word only fills words whose times a server gave. A song without
+  them is shown line by line; before, the times were worked out from the
+  line's length.
+- The song's title is never cut short with an ellipsis.
+- A song with no lyrics, or an instrumental, shows nothing where the lyrics
+  go. It showed "No lyrics for this track".
+
+### Fixed
+
+- Word timing went missing for many songs. The servers refuse a third
+  request within ten seconds, and a refusal was dropped without a second
+  try. Requests are now spaced out, a refusal is asked again, and a song
+  that was skipped past is not asked about.
+
 ## [1.1.0] - 2026-10-04
 
 ### Added
