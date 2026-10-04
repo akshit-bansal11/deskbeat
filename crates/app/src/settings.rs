@@ -19,6 +19,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, Result, w};
 
 use crate::gfx::{Gfx, Surface, TextStyle, rect};
+use crate::menu::{INK, PAPER};
 use crate::widgets::Kind;
 use crate::window::{self, Mouse};
 
@@ -46,9 +47,9 @@ const HUE_STOPS: [Rgba; 7] = [
 const CONTROL_SHARE: f32 = 0.56;
 const WHEEL_STEP: f32 = 56.0;
 
-const BACKGROUND: Rgba = [0.075, 0.075, 0.095, 1.0];
-const TEXT: Rgba = [1.0, 1.0, 1.0, 0.92];
-const DIM: Rgba = [1.0, 1.0, 1.0, 0.56];
+const BACKGROUND: Rgba = INK;
+const TEXT: Rgba = [PAPER[0], PAPER[1], PAPER[2], 0.92];
+const DIM: Rgba = [PAPER[0], PAPER[1], PAPER[2], 0.56];
 const TRACK: Rgba = [1.0, 1.0, 1.0, 0.14];
 
 pub const TABS: [&str; 5] = ["General", "Clock", "Player", "Lyrics", "Visualizer"];
@@ -118,6 +119,16 @@ const ALIGNS: [(Align, &str); 3] = [
     (Align::Left, "Left"),
     (Align::Center, "Centre"),
     (Align::Right, "Right"),
+];
+
+const DIRECTIONS: [(Direction, &str); 3] = [
+    (Direction::Horizontal, "Across"),
+    (Direction::Down, "Down"),
+    (Direction::Up, "Up"),
+];
+const LETTERS: [(Letters, &str); 2] = [
+    (Letters::Upright, "Upright"),
+    (Letters::Sideways, "Sideways"),
 ];
 
 /// What the panel needs to know about the app to draw itself.
@@ -992,6 +1003,8 @@ impl Ui<'_> {
         self.slider("Opacity", &mut label.opacity, 0.0, 1.0, 0.02)?;
         self.slider("Letter spacing", &mut label.spacing, 0.0, 1.0, 0.02)?;
         self.toggle("Capitals", &mut label.uppercase)?;
+        self.choice("Runs", &mut label.direction, &DIRECTIONS)?;
+        self.choice("Letters", &mut label.letters, &LETTERS)?;
         self.choice("Grows from its", &mut label.align, &ALIGNS)
     }
 

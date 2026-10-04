@@ -166,6 +166,28 @@ pub enum Align {
     Right,
 }
 
+/// Which way a line of text runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Direction {
+    #[default]
+    Horizontal,
+    /// Top to bottom.
+    Down,
+    /// Bottom to top.
+    Up,
+}
+
+/// How the letters stand in their line, whichever way it runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Letters {
+    #[default]
+    Upright,
+    /// Turned a quarter, lying along the line.
+    Sideways,
+}
+
 /// Where one element sits inside its widget, in display-independent pixels
 /// from the widget's top-left corner.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
@@ -211,6 +233,8 @@ pub struct Label {
     /// Extra space after every letter, as a fraction of the size.
     pub spacing: f32,
     pub uppercase: bool,
+    pub direction: Direction,
+    pub letters: Letters,
 }
 
 impl Default for Label {
@@ -226,6 +250,8 @@ impl Default for Label {
             opacity: 1.0,
             spacing: 0.0,
             uppercase: false,
+            direction: Direction::Horizontal,
+            letters: Letters::Upright,
         }
     }
 }
@@ -1140,6 +1166,19 @@ mod tests {
         assert_eq!(cfg.clock.day.size, 60.0);
         assert_eq!(cfg.clock.day.font, "Anurati");
         assert!(cfg.clock.day.uppercase);
+    }
+
+    #[test]
+    fn a_label_reads_its_direction_and_letters() {
+        let cfg = Config::from_toml(
+            "[clock.day]\ndirection = \"down\"\n[player.title]\ndirection = \"up\"\nletters = \"sideways\"\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.clock.day.direction, Direction::Down);
+        assert_eq!(cfg.clock.day.letters, Letters::Upright);
+        assert_eq!(cfg.player.title.direction, Direction::Up);
+        assert_eq!(cfg.player.title.letters, Letters::Sideways);
+        assert_eq!(cfg.clock.time.direction, Direction::Horizontal);
     }
 
     #[test]

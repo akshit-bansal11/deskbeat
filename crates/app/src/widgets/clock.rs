@@ -4,7 +4,7 @@ use deskbeat_core::config::ClockRow;
 use deskbeat_core::timefmt::{format, shows_seconds};
 use windows::core::Result;
 
-use super::{Ctx, Part, Tick, Wake, Widget, draw_card, label_color, place_label};
+use super::{Ctx, Part, Tick, Wake, Widget, draw_card, draw_placed, label_color, place_label};
 use crate::gfx::Gfx;
 
 /// A clock row is never cut short: the window grows to hold it.
@@ -70,7 +70,7 @@ impl Widget for Clock {
             let label = c.label(row);
             let placed = place_label(g, text, label, ctx, ROOM)?;
             let color = label_color(label, ctx, c.opacity);
-            g.draw_text(&placed.layout, placed.x, label.y, color, shadow);
+            draw_placed(g, &placed, color, shadow);
             self.parts.push((row as u8, placed.rect));
         }
         Ok(())

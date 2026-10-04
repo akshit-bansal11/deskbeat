@@ -35,7 +35,7 @@ It needs Windows 11 and the Spotify desktop app playing on the same PC. Playback
 
 ## Use
 
-Deskbeat lives in the notification area. Double-click its icon for settings. There is no menu: everything, including quitting and starting with Windows, is in the settings panel.
+Deskbeat lives in the notification area. Double-click its icon for settings. Right-click it for a small menu: the version, a link to this repository, the start-with-Windows switch and Quit. The settings panel has those too.
 
 | Hotkey | Does |
 | --- | --- |
@@ -50,9 +50,9 @@ Hotkeys can be turned off in settings.
 
 The settings panel covers the common choices: four one-click looks, fonts, colours, sizes, which widgets show, where they sit, and how the visualizer moves.
 
-The clock and the player have no box. In edit layout the day, time and date, and the player's art, title, artist, each button, the progress bar and both times can each be dragged anywhere; the one under the pointer is outlined. Nothing else is drawn in edit layout: no frames and no labels. Shift+click selects several elements, which then drag together. Dragging the space between a widget's elements moves all of that widget. The Player tab has two ready-made arrangements to start from.
+The clock and the player have no box. In edit layout the day, time and date, and the player's art, title, artist, each button, the progress bar and both times can each be dragged anywhere; the one under the pointer is outlined. Nothing else is drawn in edit layout: no frames and no labels. Shift+click selects several elements, which then drag together. The space between elements does nothing, so nothing moves as a group unless you select it. The Player tab has two ready-made arrangements to start from.
 
-Every piece of text has its own font, size, weight, colour, opacity, letter spacing and capitals setting. The progress bar has a length, thickness and colour, the buttons a size and colour, and the album art a size and corner rounding.
+Every piece of text has its own font, size, weight, colour, opacity, letter spacing and capitals setting. Each can also run across, down or up, with its letters upright or lying sideways: the day can stand as a column of upright letters, or be turned on its side like the spine of a book. In the file these are `direction` (`horizontal`, `down`, `up`) and `letters` (`upright`, `sideways`). The progress bar has a length, thickness and colour, the buttons a size and colour, and the album art a size and corner rounding.
 
 Everything is stored in one file, which you can also edit by hand. It reloads when you save:
 

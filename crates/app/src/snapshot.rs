@@ -23,6 +23,7 @@ use crate::capture::Audio;
 use crate::gfx::{Gfx, rect};
 use crate::lyrics::Lyrics;
 use crate::media::{Art, BLUR_SIDE, MediaState};
+use crate::menu;
 use crate::settings;
 use crate::widgets::{Ctx, Kind};
 
@@ -187,6 +188,14 @@ pub fn run(dir: &Path) -> Result<()> {
     let sheet = (settings::WIDTH as u32 * tabs, settings::HEIGHT as u32);
     let path = dir.join("settings.png");
     png(&wic, &path, sheet, |gfx| settings_sheet(gfx, &media))?;
+    println!("wrote {}", path.display());
+
+    // The tray menu, with the pointer on its second row.
+    let card = (menu::WIDTH as u32, menu::HEIGHT as u32);
+    let path = dir.join("tray-menu.png");
+    png(&wic, &path, card, |gfx| {
+        menu::paint(gfx, (40.0, 120.0), true)
+    })?;
     println!("wrote {}", path.display());
     Ok(())
 }
