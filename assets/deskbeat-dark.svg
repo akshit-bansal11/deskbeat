@@ -1,15 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- The Deskbeat mark: four sound bars, centred like a waveform, whose heights fall away to draw the letter D. For dark pages: a shade lighter, to hold against black. -->
+<!-- The Deskbeat mark: four sound bars, centred like a waveform, whose heights fall away to draw the letter D. For dark pages: a Paper tile, Ink bars, and the shortest bar in the deeper Ember that holds against Paper. Flat colours, no gradient. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
-  <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8A63FF"/>
-      <stop offset="1" stop-color="#FF5C9E"/>
-    </linearGradient>
-  </defs>
-  <rect width="108" height="108" rx="26" fill="url(#tile)"/>
-  <rect x="21" y="19" width="13" height="70" rx="6.5" fill="#FFFFFF"/>
-  <rect x="39" y="22" width="13" height="64" rx="6.5" fill="#FFFFFF"/>
-  <rect x="57" y="29" width="13" height="50" rx="6.5" fill="#FFFFFF"/>
-  <rect x="75" y="41" width="13" height="26" rx="6.5" fill="#FFFFFF"/>
+  <rect width="108" height="108" rx="26" fill="#F5F4F0"/>
+  <rect x="21" y="19" width="13" height="70" rx="6.5" fill="#131316"/>
+  <rect x="39" y="22" width="13" height="64" rx="6.5" fill="#131316"/>
+  <rect x="57" y="29" width="13" height="50" rx="6.5" fill="#131316"/>
+  <rect x="75" y="41" width="13" height="26" rx="6.5" fill="#CC3510"/>
 </svg>
