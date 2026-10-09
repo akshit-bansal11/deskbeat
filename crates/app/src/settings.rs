@@ -131,6 +131,13 @@ const ALIGNS: [(Align, &str); 3] = [
     (Align::Right, "Right"),
 ];
 
+/// The same choice for a line that runs down or up: it grows along its length.
+const RUNNING_ALIGNS: [(Align, &str); 3] = [
+    (Align::Left, "Top left"),
+    (Align::Center, "Middle"),
+    (Align::Right, "Bottom right"),
+];
+
 const DIRECTIONS: [(Direction, &str); 3] = [
     (Direction::Horizontal, "Across"),
     (Direction::Down, "Down"),
@@ -1149,7 +1156,7 @@ impl Ui<'_> {
     /// from the corner of `frame`, the widget the thing belongs to.
     fn position(&mut self, frame: Frame, x: &mut f32, y: &mut f32) -> Result<()> {
         let scale = self.status.scale;
-        let (left, top) = frame.origin(self.area.0, self.area.1);
+        let (left, top) = frame.origin_within(self.area.0, self.area.1);
         let axes = [
             ("Across (px)", x, left, self.area.0),
             ("Down (px)", y, top, self.area.1),
@@ -1174,7 +1181,7 @@ impl Ui<'_> {
     fn frame_position(&mut self, frame: &mut Frame, spans: bool) -> Result<bool> {
         let scale = self.status.scale;
         let (area_w, area_h) = self.area;
-        let (left, top) = frame.origin(area_w, area_h);
+        let (left, top) = frame.origin_within(area_w, area_h);
         let (w, h) = (frame.w as f32, frame.h as f32);
         let across = if spans {
             area_w as f32 / 2.0
@@ -1200,6 +1207,7 @@ impl Ui<'_> {
             let left = if moved.0 { corner(x, w, area_w) } else { left };
             let top = if moved.1 { corner(y, h, area_h) } else { top };
             frame.set_origin(left, top, area_w, area_h);
+            frame.reanchor(area_w, area_h);
         }
         Ok(moved.0)
     }
@@ -1209,7 +1217,12 @@ impl Ui<'_> {
     fn label_page(&mut self, frame: Frame, label: &mut Label) -> Result<()> {
         self.group("Position")?;
         self.position(frame, &mut label.x, &mut label.y)?;
-        self.choice("Grows from its", &mut label.align, &ALIGNS)?;
+        let aligns = if label.direction == Direction::Horizontal {
+            &ALIGNS
+        } else {
+            &RUNNING_ALIGNS
+        };
+        self.choice("Grows from its", &mut label.align, aligns)?;
 
         self.group("Text")?;
         self.font_row("Font", &mut label.font)?;
@@ -1293,6 +1306,7 @@ fn general(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
                 "Hide when Spotify is closed",
                 &mut general.hide_without_spotify,
             )?;
+            ui.toggle("Scale widgets with the screen", &mut general.fit_screen)?;
             ui.toggle("Global hotkeys", &mut general.hotkeys)
         }
         _ => {

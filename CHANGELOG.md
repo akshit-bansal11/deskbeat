@@ -6,6 +6,33 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `general.fit_screen`, on by default ("Scale widgets with the screen"):
+  every widget grows or shrinks with the height of the screen, so a layout
+  made on a big monitor keeps its proportions on a laptop. The screen it is
+  measured against is the first one the app sees, kept as
+  `general.layout_height`.
+
+### Changed
+
+- A widget that is dragged, or moved with its sliders, is measured from the
+  edge, corner or middle of the screen it sits nearest, so it keeps that
+  place on a screen of another size. A layout from an older version is
+  measured this way once, at start, without anything moving.
+- On a line of text that runs down or up, "Grows from its" picks its top,
+  middle or bottom as well. "Middle" keeps a day name centred where it is
+  however long it is: Wednesday no longer reaches lower than Tuesday.
+  `right` on such a line now marks its bottom, where it marked its top.
+
+### Fixed
+
+- Widgets left off the edge, or bunched to one side, after the screen
+  changed: unplugging a monitor, docking, or a new resolution or scale.
+  They are now kept on the screen.
+- The widgets' scale is read from the primary monitor, the one they are
+  placed on, not from a hidden window that could still be on another one.
+
 ## [1.3.0] - 2026-10-04
 
 ### Added

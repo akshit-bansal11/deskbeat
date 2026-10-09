@@ -344,16 +344,24 @@ pub fn place_label(g: &mut Gfx, text: &str, label: &Label, ctx: &Ctx, room: f32)
         Align::Right => room - text_w,
         Align::Center => (room - text_w) / 2.0,
     };
-    // The label's position marks the top of the text as drawn, and whichever
-    // edge of it the label grows from.
+    // The label's position marks whichever edge of the text it grows from.
+    // A line that runs across grows sideways, so the position is its top
+    // and its left, centre or right. One that runs down or up grows along
+    // its length, so the same choice is its top, middle or bottom too:
+    // "Wednesday" then stays centred where "Tuesday" was.
     let drawn = turned(rect(lead, 0.0, text_w, text_h), quarter);
-    let width = drawn.right - drawn.left;
+    let (width, height) = (drawn.right - drawn.left, drawn.bottom - drawn.top);
     let left = match label.align {
         Align::Left => label.x,
         Align::Right => label.x - width,
         Align::Center => label.x - width / 2.0,
     };
-    let offset = (left - drawn.left, label.y - drawn.top);
+    let top = match (label.direction, label.align) {
+        (Direction::Horizontal, _) | (_, Align::Left) => label.y,
+        (_, Align::Center) => label.y - height / 2.0,
+        (_, Align::Right) => label.y - height,
+    };
+    let offset = (left - drawn.left, top - drawn.top);
     // A line box is taller than its letters, most of all at large sizes.
     // Trimmed, so the grab box of one row does not cover its neighbours.
     let trim = if stack { 0.0 } else { text_h * LINE_BOX_TRIM };
