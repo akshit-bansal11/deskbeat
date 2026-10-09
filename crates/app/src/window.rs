@@ -11,11 +11,12 @@ use std::ffi::c_void;
 
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY, MONITORINFO,
+    MonitorFromPoint, MonitorFromWindow,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
 };
@@ -444,6 +445,17 @@ pub fn dpi(hwnd: HWND) -> u32 {
     match unsafe { GetDpiForWindow(hwnd) } {
         0 => 96,
         dpi => dpi,
+    }
+}
+
+/// The primary monitor's DPI: the one [`work_area`] is on. A hidden
+/// window's own DPI can lag behind a monitor being plugged or unplugged.
+pub fn primary_dpi() -> u32 {
+    let monitor = unsafe { MonitorFromPoint(POINT::default(), MONITOR_DEFAULTTOPRIMARY) };
+    let (mut x, mut y) = (0, 0);
+    match unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y) } {
+        Ok(()) if x > 0 => x,
+        _ => 96,
     }
 }
 

@@ -180,8 +180,12 @@ struct App {
     lyrics_shared: Arc<Mutex<LyricsState>>,
     audio: Arc<Audio>,
 
-    /// Pixels per display-independent pixel on the primary monitor.
+    /// Pixels per layout pixel for the widgets: the primary monitor's DPI
+    /// times how much the layout is grown or shrunk to fit its screen.
     scale: f32,
+    /// Pixels per display-independent pixel on the primary monitor, for the
+    /// settings panel and the tray menu, which keep their size.
+    ui_scale: f32,
     edit: bool,
     hidden: bool,
     /// How much of its monitor the window in front covers, and which monitor.
@@ -310,6 +314,7 @@ pub fn run() -> Result<()> {
         lyrics_shared: Arc::default(),
         audio: capture::spawn(notify)?,
         scale: 1.0,
+        ui_scale: 1.0,
         edit: false,
         hidden: false,
         cover: Cover::None,
@@ -345,6 +350,13 @@ pub fn run() -> Result<()> {
         app.save_config();
     }
     app.apply_config();
+    // A layout from before widgets were re-anchored as they moved: measure
+    // each from where it sits now, so it keeps that place on other screens.
+    let before = app.cfg.clone();
+    app.reanchor(&Kind::ALL);
+    if app.cfg != before {
+        app.save_at = Some(now_ms() + SAVE_DELAY_MS);
+    }
     // Whatever is already in front may be covering the desktop.
     app.foreground_changed(unsafe { GetForegroundWindow() });
     app.run_loop();
@@ -432,7 +444,7 @@ impl App {
             self.draw_settings();
         }
         if let Some(menu) = self.menu.as_mut().filter(|menu| menu.dirty)
-            && let Err(error) = menu.draw(&mut self.gfx, self.scale, self.autostart)
+            && let Err(error) = menu.draw(&mut self.gfx, self.ui_scale, self.autostart)
         {
             log(&format!("drawing the tray menu failed: {error}"));
             self.device_lost = true;
@@ -565,7 +577,7 @@ impl App {
             (aw as f32 / self.scale) as i32,
             (ah as f32 / self.scale) as i32,
         );
-        let (left, top) = frame.origin(area.0, area.1);
+        let (left, top) = frame.origin_within(area.0, area.1);
         for id in 0..kind.part_count() {
             kind.nudge(&mut self.cfg, id, -dx, -dy);
         }
@@ -610,7 +622,7 @@ impl App {
             autostart: self.autostart,
             scale: self.scale,
         };
-        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, EMBER, status, area);
+        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.ui_scale, EMBER, status, area);
         let outcome = match drawn {
             Ok(outcome) => outcome,
             Err(error) => {
@@ -658,7 +670,7 @@ impl App {
         if let Some(menu) = self.menu.take() {
             menu.close();
         }
-        match Menu::open(&self.gfx, self.scale) {
+        match Menu::open(&self.gfx, self.ui_scale) {
             Ok(menu) => self.menu = Some(menu),
             Err(error) => log(&format!("could not open the tray menu: {error}")),
         }
@@ -818,11 +830,11 @@ impl App {
 
     fn mouse(&mut self, hwnd: HWND, kind: Mouse, x: i32, y: i32) {
         if let Some(panel) = self.settings.as_mut().filter(|panel| panel.hwnd == hwnd) {
-            panel.mouse(kind, x as f32 / self.scale, y as f32 / self.scale);
+            panel.mouse(kind, x as f32 / self.ui_scale, y as f32 / self.ui_scale);
             return;
         }
         if let Some(menu) = self.menu.as_mut().filter(|menu| menu.hwnd == hwnd) {
-            let pick = menu.mouse(kind, x as f32 / self.scale, y as f32 / self.scale);
+            let pick = menu.mouse(kind, x as f32 / self.ui_scale, y as f32 / self.ui_scale);
             if let Some(pick) = pick {
                 self.close_menu(hwnd);
                 self.picked(pick);
@@ -919,6 +931,8 @@ impl App {
             }
             Mouse::Up => {
                 if self.drag.take().is_some() {
+                    let kinds: Vec<Kind> = self.selected.iter().map(|(kind, _)| *kind).collect();
+                    self.reanchor(&kinds);
                     self.cfg = self.cfg.clone().sanitized();
                     self.save_config();
                     if let Some(panel) = &mut self.settings {
@@ -957,6 +971,19 @@ impl App {
         }
     }
 
+    /// Measures each widget's frame from the edge, corner or centre it is
+    /// nearest, so it keeps that place on a screen of another size.
+    fn reanchor(&mut self, kinds: &[Kind]) {
+        let (_, _, aw, ah) = window::work_area();
+        let area = (
+            (aw as f32 / self.scale) as i32,
+            (ah as f32 / self.scale) as i32,
+        );
+        for &kind in kinds {
+            kind.frame_mut(&mut self.cfg).reanchor(area.0, area.1);
+        }
+    }
+
     fn widget_moved(&mut self, hwnd: HWND) {
         let Some(index) = self.host_index(hwnd) else {
             return;
@@ -982,6 +1009,7 @@ impl App {
             frame.h = dip(h).max(1) as u32;
             frame.set_origin(dip(x - ax), dip(y - ay), dip(aw), dip(ah));
         }
+        kind.frame_mut(&mut self.cfg).reanchor(dip(aw), dip(ah));
         self.cfg = self.cfg.clone().sanitized();
         self.save_config();
         self.sync_windows();
@@ -1085,7 +1113,7 @@ impl App {
             panel.focus();
             return;
         }
-        match Panel::open(&self.gfx, self.scale) {
+        match Panel::open(&self.gfx, self.ui_scale) {
             Ok(panel) => self.settings = Some(panel),
             Err(error) => {
                 // The panel is a convenience; the file is always editable.
@@ -1197,7 +1225,14 @@ impl App {
     /// Positions, sizes, shows, hides and orders every widget window.
     fn sync_windows(&mut self) {
         let (ax, ay, aw, ah) = window::work_area();
-        self.scale = window::dpi(self.main) as f32 / 96.0;
+        self.ui_scale = window::primary_dpi() as f32 / 96.0;
+        let area_h = ah as f32 / self.ui_scale;
+        if self.cfg.general.layout_height == 0 {
+            // The first screen seen is the one the layout is measured on.
+            self.cfg.general.layout_height = area_h.round() as u32;
+            self.save_at = Some(now_ms() + SAVE_DELAY_MS);
+        }
+        self.scale = self.ui_scale * self.cfg.general.layout_scale(area_h);
         let scale = self.scale;
         let px = |dip: f32| (dip * scale).round() as i32;
         let layer = self.cfg.general.layer;
@@ -1210,7 +1245,8 @@ impl App {
 
         for host in &mut self.hosts {
             let frame = host.kind.placed(&self.cfg, (aw as f32 / scale) as i32);
-            let (left, top) = frame.origin((aw as f32 / scale) as i32, (ah as f32 / scale) as i32);
+            let (left, top) =
+                frame.origin_within((aw as f32 / scale) as i32, (ah as f32 / scale) as i32);
             // In edit mode a fitted widget's window covers the work area and
             // the widget is drawn at its place inside it. Re-wrapping the
             // window while an element is dragged moved it a frame before the

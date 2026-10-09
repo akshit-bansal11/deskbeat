@@ -38,6 +38,12 @@ pub struct General {
     /// Global hotkeys: Ctrl+Alt+E edit layout, Ctrl+Alt+H hide,
     /// Ctrl+Alt+S settings, Ctrl+Alt+Up/Down lyric offset.
     pub hotkeys: bool,
+    /// Grow or shrink every widget with the screen, so a layout made on a
+    /// big monitor keeps its proportions on a laptop.
+    pub fit_screen: bool,
+    /// How tall the work area was, in display-independent pixels, when the
+    /// layout was first laid out. 0 until the app has seen a screen.
+    pub layout_height: u32,
 }
 
 impl Default for General {
@@ -47,7 +53,20 @@ impl Default for General {
             pause_on_fullscreen: true,
             hide_without_spotify: true,
             hotkeys: true,
+            fit_screen: true,
+            layout_height: 0,
         }
+    }
+}
+
+impl General {
+    /// How much the widgets are grown or shrunk on a work area `area_h`
+    /// display-independent pixels tall.
+    pub fn layout_scale(&self, area_h: f32) -> f32 {
+        if !self.fit_screen || self.layout_height == 0 || !area_h.is_finite() || area_h <= 0.0 {
+            return 1.0;
+        }
+        (area_h / self.layout_height as f32).clamp(0.25, 4.0)
     }
 }
 
@@ -154,6 +173,47 @@ impl Frame {
         let (px, py) = probe.origin(area_w, area_h);
         self.x += (left - x) * (px - x);
         self.y += (top - y) * (py - y);
+    }
+
+    /// Like [`Frame::origin`], but pulled back inside the work area, so a
+    /// layout made on a bigger screen never leaves a widget off the edge.
+    pub fn origin_within(&self, area_w: i32, area_h: i32) -> (i32, i32) {
+        let (x, y) = self.origin(area_w, area_h);
+        (
+            x.clamp(0, (area_w - self.w as i32).max(0)),
+            y.clamp(0, (area_h - self.h as i32).max(0)),
+        )
+    }
+
+    /// Measures the frame from whichever edge, corner or centre it sits
+    /// nearest, without moving it. A widget left in the middle then stays
+    /// in the middle on a screen of another size, and one by the right
+    /// edge stays by the right edge.
+    pub fn reanchor(&mut self, area_w: i32, area_h: i32) {
+        use Anchor::*;
+        let (left, top) = self.origin(area_w, area_h);
+        let third = |start: i32, size: u32, room: i32| {
+            let centre = start + size as i32 / 2;
+            if centre * 3 < room {
+                0
+            } else if centre * 3 > room * 2 {
+                2
+            } else {
+                1
+            }
+        };
+        self.anchor = match (third(left, self.w, area_w), third(top, self.h, area_h)) {
+            (0, 0) => TopLeft,
+            (1, 0) => Top,
+            (2, 0) => TopRight,
+            (0, 1) => Left,
+            (1, 1) => Center,
+            (2, 1) => Right,
+            (0, _) => BottomLeft,
+            (1, _) => Bottom,
+            _ => BottomRight,
+        };
+        self.set_origin(left, top, area_w, area_h);
     }
 }
 
@@ -929,6 +989,9 @@ impl Config {
             f.y = f.y.clamp(-4320, 4320);
         }
 
+        let g = &mut self.general;
+        g.layout_height = g.layout_height.min(8640);
+
         let t = &mut self.theme;
         unit(&mut t.card_opacity);
         unit(&mut t.card_border);
@@ -1120,6 +1183,53 @@ mod tests {
             assert_eq!(frame.anchor, anchor);
             assert_eq!(frame.origin(1920, 1040), (123, 456), "{anchor:?}");
         }
+    }
+
+    #[test]
+    fn reanchoring_keeps_the_place_and_follows_a_smaller_screen() {
+        let big = (2560, 1400);
+        let small = (1920, 1040);
+        // Dragged to the middle while measured from the top-left corner.
+        let mut middle = Frame::new(Anchor::TopLeft, 1080, 600, 400, 200);
+        middle.reanchor(big.0, big.1);
+        assert_eq!(middle.anchor, Anchor::Center);
+        assert_eq!(middle.origin(big.0, big.1), (1080, 600));
+        assert_eq!(middle.origin(small.0, small.1), (760, 420));
+
+        let mut corner = Frame::new(Anchor::TopLeft, 2100, 1150, 400, 200);
+        corner.reanchor(big.0, big.1);
+        assert_eq!(corner.anchor, Anchor::BottomRight);
+        assert_eq!(corner.origin(big.0, big.1), (2100, 1150));
+        assert_eq!(corner.origin(small.0, small.1), (1460, 790));
+
+        let mut top = Frame::new(Anchor::Center, 0, -500, 400, 100);
+        top.reanchor(big.0, big.1);
+        assert_eq!(top.anchor, Anchor::Top);
+        assert_eq!(top.origin(big.0, big.1), (1080, 150));
+    }
+
+    #[test]
+    fn a_frame_beyond_the_edge_is_pulled_back_on_screen() {
+        let frame = Frame::new(Anchor::TopLeft, 1800, -40, 400, 100);
+        assert_eq!(frame.origin_within(1920, 1040), (1520, 0));
+        let huge = Frame::new(Anchor::Center, 0, 0, 3000, 2000);
+        assert_eq!(huge.origin_within(1920, 1040), (0, 0));
+    }
+
+    #[test]
+    fn widgets_grow_and_shrink_with_the_screen() {
+        let mut general = General {
+            layout_height: 1400,
+            ..General::default()
+        };
+        assert_eq!(general.layout_scale(1400.0), 1.0);
+        assert!((general.layout_scale(1050.0) - 0.75).abs() < 1e-6);
+        assert_eq!(general.layout_scale(f32::NAN), 1.0);
+        general.fit_screen = false;
+        assert_eq!(general.layout_scale(1050.0), 1.0);
+        general.fit_screen = true;
+        general.layout_height = 0;
+        assert_eq!(general.layout_scale(1050.0), 1.0);
     }
 
     #[test]
