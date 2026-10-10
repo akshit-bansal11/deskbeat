@@ -131,6 +131,14 @@ const ALIGNS: [(Align, &str); 3] = [
     (Align::Right, "Right"),
 ];
 
+/// The same three for a line that runs down or up, which grows along its
+/// length.
+const ALIGNS_UPRIGHT: [(Align, &str); 3] = [
+    (Align::Left, "Top"),
+    (Align::Center, "Middle"),
+    (Align::Right, "Bottom"),
+];
+
 const DIRECTIONS: [(Direction, &str); 3] = [
     (Direction::Horizontal, "Across"),
     (Direction::Down, "Down"),
@@ -1209,7 +1217,11 @@ impl Ui<'_> {
     fn label_page(&mut self, frame: Frame, label: &mut Label) -> Result<()> {
         self.group("Position")?;
         self.position(frame, &mut label.x, &mut label.y)?;
-        self.choice("Grows from its", &mut label.align, &ALIGNS)?;
+        let aligns = match label.direction {
+            Direction::Horizontal => &ALIGNS,
+            Direction::Down | Direction::Up => &ALIGNS_UPRIGHT,
+        };
+        self.choice("Grows from its", &mut label.align, aligns)?;
 
         self.group("Text")?;
         self.font_row("Font", &mut label.font)?;

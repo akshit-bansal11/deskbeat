@@ -269,6 +269,16 @@ fn turned(r: D2D_RECT_F, quarter: i8) -> D2D_RECT_F {
     }
 }
 
+/// Where a run `len` long starts when `at` marks the edge of it, or the
+/// middle, that `align` names.
+fn start(align: Align, at: f32, len: f32) -> f32 {
+    match align {
+        Align::Left => at,
+        Align::Right => at - len,
+        Align::Center => at - len / 2.0,
+    }
+}
+
 /// Share of a line box, above and below, that holds no ink.
 const LINE_BOX_TRIM: f32 = 0.15;
 /// The narrowest a line is ever squeezed to before it is cut with an ellipsis.
@@ -344,16 +354,17 @@ pub fn place_label(g: &mut Gfx, text: &str, label: &Label, ctx: &Ctx, room: f32)
         Align::Right => room - text_w,
         Align::Center => (room - text_w) / 2.0,
     };
-    // The label's position marks the top of the text as drawn, and whichever
-    // edge of it the label grows from.
+    // The label's position marks whichever edge of the text as drawn the
+    // label grows from. A line that runs down or up changes length along
+    // `y`, so there it grows from its top, middle or bottom as well; one
+    // that runs across always hangs from its top.
     let drawn = turned(rect(lead, 0.0, text_w, text_h), quarter);
-    let width = drawn.right - drawn.left;
-    let left = match label.align {
-        Align::Left => label.x,
-        Align::Right => label.x - width,
-        Align::Center => label.x - width / 2.0,
+    let left = start(label.align, label.x, drawn.right - drawn.left);
+    let top = match label.direction {
+        Direction::Horizontal => label.y,
+        Direction::Down | Direction::Up => start(label.align, label.y, drawn.bottom - drawn.top),
     };
-    let offset = (left - drawn.left, label.y - drawn.top);
+    let offset = (left - drawn.left, top - drawn.top);
     // A line box is taller than its letters, most of all at large sizes.
     // Trimmed, so the grab box of one row does not cover its neighbours.
     let trim = if stack { 0.0 } else { text_h * LINE_BOX_TRIM };
@@ -407,6 +418,18 @@ mod tests {
             (0.0, -110.0, 20.0, -10.0)
         );
         assert_eq!(turned(line, 0), line);
+    }
+
+    #[test]
+    fn a_run_keeps_the_edge_it_grows_from() {
+        // TUESDAY then WEDNESDAY, as columns 700 and 900 tall, placed at 500.
+        assert_eq!(start(Align::Left, 500.0, 700.0), 500.0);
+        assert_eq!(start(Align::Left, 500.0, 900.0), 500.0);
+        // Centred, the middle stays where it was.
+        assert_eq!(start(Align::Center, 500.0, 700.0) + 350.0, 500.0);
+        assert_eq!(start(Align::Center, 500.0, 900.0) + 450.0, 500.0);
+        // From its end, the end does.
+        assert_eq!(start(Align::Right, 500.0, 900.0) + 900.0, 500.0);
     }
 
     #[test]

@@ -16,6 +16,15 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
   the layout was made for. The settings panel and the tray menu keep their
   size.
 
+### Changed
+
+- A line of text that runs down or up grows from its top, middle or bottom,
+  as "Grows from its" says, which now reads Top, Middle and Bottom for such
+  a line. It always grew from its top, so a day set to the middle moved off
+  centre whenever its name changed length. For such a line set to the middle
+  or the bottom, `y` now marks that point, not the top: it has to be put
+  back in place once.
+
 ## [1.3.0] - 2026-10-04
 
 ### Added
