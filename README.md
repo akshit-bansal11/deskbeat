@@ -77,7 +77,7 @@ Widgets can sit on the desktop under your windows (the default), behave like a n
 Deskbeat has no console, so its diagnostics write to a file. In a terminal:
 
 ```
-Deskbeat-1.3.0.exe --probe > probe.txt
+Deskbeat-1.4.0.exe --probe > probe.txt
 ```
 
 With Spotify playing, this records for eight seconds what Windows reports about the track and how loud Spotify's audio is. Two more:
