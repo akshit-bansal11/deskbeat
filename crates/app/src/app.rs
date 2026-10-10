@@ -180,8 +180,12 @@ struct App {
     lyrics_shared: Arc<Mutex<LyricsState>>,
     audio: Arc<Audio>,
 
-    /// Pixels per display-independent pixel on the primary monitor.
+    /// Pixels per unit of the layout: whatever fits the screen the layout
+    /// was arranged on into the primary monitor's work area.
     scale: f32,
+    /// Pixels per display-independent pixel on the primary monitor, for the
+    /// settings panel and the tray menu, which do not shrink with the layout.
+    ui_scale: f32,
     edit: bool,
     hidden: bool,
     /// How much of its monitor the window in front covers, and which monitor.
@@ -310,6 +314,7 @@ pub fn run() -> Result<()> {
         lyrics_shared: Arc::default(),
         audio: capture::spawn(notify)?,
         scale: 1.0,
+        ui_scale: 1.0,
         edit: false,
         hidden: false,
         cover: Cover::None,
@@ -432,7 +437,7 @@ impl App {
             self.draw_settings();
         }
         if let Some(menu) = self.menu.as_mut().filter(|menu| menu.dirty)
-            && let Err(error) = menu.draw(&mut self.gfx, self.scale, self.autostart)
+            && let Err(error) = menu.draw(&mut self.gfx, self.ui_scale, self.autostart)
         {
             log(&format!("drawing the tray menu failed: {error}"));
             self.device_lost = true;
@@ -610,7 +615,7 @@ impl App {
             autostart: self.autostart,
             scale: self.scale,
         };
-        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.scale, EMBER, status, area);
+        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.ui_scale, EMBER, status, area);
         let outcome = match drawn {
             Ok(outcome) => outcome,
             Err(error) => {
@@ -658,7 +663,7 @@ impl App {
         if let Some(menu) = self.menu.take() {
             menu.close();
         }
-        match Menu::open(&self.gfx, self.scale) {
+        match Menu::open(&self.gfx, self.ui_scale) {
             Ok(menu) => self.menu = Some(menu),
             Err(error) => log(&format!("could not open the tray menu: {error}")),
         }
@@ -818,11 +823,11 @@ impl App {
 
     fn mouse(&mut self, hwnd: HWND, kind: Mouse, x: i32, y: i32) {
         if let Some(panel) = self.settings.as_mut().filter(|panel| panel.hwnd == hwnd) {
-            panel.mouse(kind, x as f32 / self.scale, y as f32 / self.scale);
+            panel.mouse(kind, x as f32 / self.ui_scale, y as f32 / self.ui_scale);
             return;
         }
         if let Some(menu) = self.menu.as_mut().filter(|menu| menu.hwnd == hwnd) {
-            let pick = menu.mouse(kind, x as f32 / self.scale, y as f32 / self.scale);
+            let pick = menu.mouse(kind, x as f32 / self.ui_scale, y as f32 / self.ui_scale);
             if let Some(pick) = pick {
                 self.close_menu(hwnd);
                 self.picked(pick);
@@ -1085,7 +1090,7 @@ impl App {
             panel.focus();
             return;
         }
-        match Panel::open(&self.gfx, self.scale) {
+        match Panel::open(&self.gfx, self.ui_scale) {
             Ok(panel) => self.settings = Some(panel),
             Err(error) => {
                 // The panel is a convenience; the file is always editable.
@@ -1197,7 +1202,19 @@ impl App {
     /// Positions, sizes, shows, hides and orders every widget window.
     fn sync_windows(&mut self) {
         let (ax, ay, aw, ah) = window::work_area();
-        self.scale = window::dpi(self.main) as f32 / 96.0;
+        self.ui_scale = window::dpi(self.main) as f32 / 96.0;
+        let general = &mut self.cfg.general;
+        if general.layout_scale(aw, ah).is_none() {
+            // Nothing says which screen the layout was arranged on, so it
+            // is this one, and nothing on it moves.
+            general.layout_w = (aw as f32 / self.ui_scale).round() as u32;
+            general.layout_h = (ah as f32 / self.ui_scale).round() as u32;
+            // A file that does not parse is the user's to mend first.
+            if !self.cfg_broken {
+                self.save_at = Some(now_ms() + SAVE_DELAY_MS);
+            }
+        }
+        self.scale = general.layout_scale(aw, ah).unwrap_or(self.ui_scale);
         let scale = self.scale;
         let px = |dip: f32| (dip * scale).round() as i32;
         let layer = self.cfg.general.layer;

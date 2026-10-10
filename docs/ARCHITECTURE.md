@@ -53,6 +53,8 @@ Each widget is its own layered, click-through, no-activate tool window with a Di
 
 The clock and the player have no box. Each of their elements has its own position, and the window is wrapped around whatever was drawn. In edit mode that window covers the work area instead and does not move, so dragging one element cannot disturb the others; the space between elements passes clicks through. The lyrics and the visualizer keep a frame, because it is what sizes them.
 
+Positions and sizes in the config are in units of the screen the layout was arranged on, whose size `general.layout_w` and `layout_h` record. `General::layout_scale` gives the pixels one unit takes on the current work area, the smaller of the two ratios so that nothing is cut off, and that one factor is the transform every widget draws through. Anchors take up the difference when the two screens are not the same shape. The settings panel and the tray menu use the monitor's DPI instead.
+
 ## Keeping lyrics in time
 
 The media session reports a position now and then, not continuously, and the reports jitter. The sync clock advances on its own between reports, ignores jitter inside a deadband, takes the median of recent errors so one outlier cannot move it, eases small corrections in over a few frames, and snaps on a seek or a resume.

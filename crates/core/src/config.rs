@@ -38,6 +38,25 @@ pub struct General {
     /// Global hotkeys: Ctrl+Alt+E edit layout, Ctrl+Alt+H hide,
     /// Ctrl+Alt+S settings, Ctrl+Alt+Up/Down lyric offset.
     pub hotkeys: bool,
+    /// The size of the screen, less the taskbar, that the layout was
+    /// arranged on, in the units every position and size here is in. On any
+    /// other screen the whole layout is scaled to fit. 0 is not recorded
+    /// yet: the app fills it in from the screen it first runs on.
+    pub layout_w: u32,
+    pub layout_h: u32,
+}
+
+impl General {
+    /// How many pixels one unit of the layout takes on a work area of
+    /// `area_w` by `area_h` pixels, so that all of what was arranged fits.
+    /// `None` while no size is recorded.
+    pub fn layout_scale(&self, area_w: i32, area_h: i32) -> Option<f32> {
+        (self.layout_w > 0 && self.layout_h > 0).then(|| {
+            let across = area_w as f32 / self.layout_w as f32;
+            let down = area_h as f32 / self.layout_h as f32;
+            across.min(down)
+        })
+    }
 }
 
 impl Default for General {
@@ -47,6 +66,8 @@ impl Default for General {
             pause_on_fullscreen: true,
             hide_without_spotify: true,
             hotkeys: true,
+            layout_w: 0,
+            layout_h: 0,
         }
     }
 }
@@ -929,6 +950,13 @@ impl Config {
             f.y = f.y.clamp(-4320, 4320);
         }
 
+        // A size no screen has would scale the layout to nothing, or past
+        // what can be drawn. It is recorded afresh instead.
+        let g = &mut self.general;
+        if !(320..=7680).contains(&g.layout_w) || !(200..=4320).contains(&g.layout_h) {
+            (g.layout_w, g.layout_h) = (0, 0);
+        }
+
         let t = &mut self.theme;
         unit(&mut t.card_opacity);
         unit(&mut t.card_border);
@@ -1089,6 +1117,41 @@ mod tests {
         assert_eq!(cfg.visualizer.rotation, 90);
         assert_eq!(cfg.lyrics.size, 10.0);
         assert_eq!(cfg.clock.frame.w, 80);
+    }
+
+    #[test]
+    fn the_layout_scales_to_fit_another_screen() {
+        let mut general = General::default();
+        assert_eq!(general.layout_scale(2560, 1440), None);
+
+        (general.layout_w, general.layout_h) = (2048, 1152);
+        // The screen it was arranged on, at 125%.
+        assert_eq!(general.layout_scale(2560, 1440), Some(1.25));
+        // A smaller screen of the same shape: everything shrinks alike.
+        assert_eq!(general.layout_scale(1920, 1080), Some(0.9375));
+        // A squarer one: the tighter side decides, so nothing is cut off.
+        assert_eq!(general.layout_scale(1920, 1200), Some(0.9375));
+        assert_eq!(general.layout_scale(2560, 1080), Some(0.9375));
+    }
+
+    #[test]
+    fn a_layout_size_no_screen_has_is_forgotten() {
+        let cfg = Config::from_toml(
+            "[general]
+layout_w = 1
+layout_h = 1152
+",
+        )
+        .unwrap();
+        assert_eq!((cfg.general.layout_w, cfg.general.layout_h), (0, 0));
+        let cfg = Config::from_toml(
+            "[general]
+layout_w = 2048
+layout_h = 1152
+",
+        )
+        .unwrap();
+        assert_eq!((cfg.general.layout_w, cfg.general.layout_h), (2048, 1152));
     }
 
     #[test]

@@ -6,6 +6,16 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The layout scales with the screen. `general.layout_w` and `layout_h` record
+  the size of the screen the widgets were arranged on, and on any other
+  screen everything is scaled, text included, to fit: unplugging a monitor
+  from a laptop no longer leaves the widgets oversized and off the edge. The
+  first run records the screen it starts on, so start it once on the screen
+  the layout was made for. The settings panel and the tray menu keep their
+  size.
+
 ## [1.3.0] - 2026-10-04
 
 ### Added
