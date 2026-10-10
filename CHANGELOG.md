@@ -6,6 +6,8 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-10
+
 ### Added
 
 - `general.fit_screen`, on by default ("Scale widgets with the screen"):
