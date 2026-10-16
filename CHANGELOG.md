@@ -6,6 +6,10 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The website moved to https://deskbeat.akshitbansal.dev.
+
 ## [1.4.0] - 2026-10-10
 
 ### Added

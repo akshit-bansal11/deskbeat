@@ -62,7 +62,7 @@ export const REPO = "https://github.com/akshit-bansal11/deskbeat";
 export const LATEST_RELEASE = `${REPO}/releases/latest`;
 
 /** The site's one origin. Canonical links, the sitemap and robots.txt all resolve against it. */
-export const SITE = "https://deskbeat.vercel.app";
+export const SITE = "https://deskbeat.akshitbansal.dev";
 
 /** The card a shared link unfurls into: the repository's own social preview, 1280×640. */
 export const SOCIAL_IMAGE = {
