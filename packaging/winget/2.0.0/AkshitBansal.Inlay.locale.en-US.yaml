@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: AkshitBansal.Inlay
+PackageVersion: 2.0.0
+PackageLocale: en-US
+Publisher: Akshit Bansal
+PublisherUrl: https://github.com/akshit-bansal11
+PublisherSupportUrl: https://github.com/akshit-bansal11/deskbeat/issues
+PackageName: Inlay
+PackageUrl: https://github.com/akshit-bansal11/deskbeat
+License: MIT
+LicenseUrl: https://github.com/akshit-bansal11/deskbeat/blob/main/LICENSE
+ShortDescription: Live widgets set into your Windows 11 desktop, a clock, a spectrum visualizer, synced lyrics and a player.
+Description: One small native tray app that sets four live widgets into the desktop, behind the icons. Each redraws only when something on it changes. The visualizer, lyrics and player follow whatever Spotify plays, with no Spotify login. A light alternative to Rainmeter. Formerly Deskbeat.
+Tags:
+- clock
+- desktop-widgets
+- lyrics
+- rainmeter
+- spotify
+- visualizer
+ReleaseNotesUrl: https://github.com/akshit-bansal11/deskbeat/releases/tag/v2.0.0
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0

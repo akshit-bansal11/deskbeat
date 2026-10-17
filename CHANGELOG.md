@@ -6,6 +6,12 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-17
+
+Deskbeat is now **Inlay**. To upgrade, quit Deskbeat from its tray menu and
+run `Inlay-2.0.0.exe`: your settings, fonts and start-with-Windows switch
+come with it, and the old `Deskbeat-*.exe` can be deleted.
+
 ### Changed
 
 - The website moved to https://deskbeat.akshitbansal.dev.

@@ -32,7 +32,7 @@ dependencies = [
 
 [[package]]
 name = "inlay"
-version = "1.4.0"
+version = "2.0.0"
 dependencies = [
  "inlay-core",
  "rustfft",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "inlay-core"
-version = "1.4.0"
+version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
