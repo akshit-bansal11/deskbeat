@@ -6,13 +6,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use deskbeat_core::color::{accent_from_bgra, downsample_bgra};
-use deskbeat_core::config::{
+use inlay_core::color::{accent_from_bgra, downsample_bgra};
+use inlay_core::config::{
     Config, Direction, Letters, LyricsMode, PlayerLayout, Preset, VisualizerStyle,
 };
-use deskbeat_core::lrc::parse_lrc;
-use deskbeat_core::timefmt::LocalTime;
-use deskbeat_core::timing::normalize_lines;
+use inlay_core::lrc::parse_lrc;
+use inlay_core::timefmt::LocalTime;
+use inlay_core::timing::normalize_lines;
 use windows::Win32::Foundation::{E_FAIL, GENERIC_WRITE};
 use windows::Win32::Graphics::Imaging::*;
 use windows::Win32::System::Com::{
@@ -174,7 +174,7 @@ pub fn run(dir: &Path) -> Result<()> {
     // Bars hanging from the top edge of the screen.
     let mut hanging = Config::default();
     hanging.visualizer.flip_y = true;
-    hanging.visualizer.frame.anchor = deskbeat_core::config::Anchor::Top;
+    hanging.visualizer.frame.anchor = inlay_core::config::Anchor::Top;
     hanging.clock.frame.y = 200;
     // Text every way it can run: a column of upright letters, a line on its
     // side reading down, and one reading up.
@@ -331,7 +331,7 @@ fn settings_page(gfx: &mut Gfx, tab: usize, section: usize) -> Result<()> {
         gfx,
         &mut cfg,
         (settings::WIDTH, settings::HEIGHT),
-        menu::EMBER,
+        menu::ORANGE,
         settings::Status {
             edit: false,
             hidden: false,

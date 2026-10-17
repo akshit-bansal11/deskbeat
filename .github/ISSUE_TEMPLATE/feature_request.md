@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Something Deskbeat should do
+about: Something Inlay should do
 labels: enhancement
 ---
 

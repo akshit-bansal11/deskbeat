@@ -7,11 +7,9 @@ pub mod visualizer;
 
 use std::time::Duration;
 
-use deskbeat_core::color::{Rgba, parse_hex, with_alpha};
-use deskbeat_core::config::{
-    Align, ClockRow, Config, Direction, Frame, Label, Letters, PlayerPart,
-};
-use deskbeat_core::timefmt::LocalTime;
+use inlay_core::color::{Rgba, parse_hex, with_alpha};
+use inlay_core::config::{Align, ClockRow, Config, Direction, Frame, Label, Letters, PlayerPart};
+use inlay_core::timefmt::LocalTime;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 use windows::core::Result;

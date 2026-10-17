@@ -1,6 +1,6 @@
-//! Deskbeat: desktop widgets for Spotify.
+//! Inlay: live widgets set into the Windows desktop.
 //!
-//! `deskbeat` runs the app. `deskbeat --snapshot <dir>` renders the
+//! `inlay` runs the app. `inlay --snapshot <dir>` renders the
 //! widgets to PNG files from made-up data.
 //!
 //! Three diagnostics for a machine where a widget stays empty. There is no
@@ -32,13 +32,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use deskbeat_core::config::AudioSource;
+use inlay_core::config::AudioSource;
 use windows::Win32::Foundation::HWND;
 use windows::core::Result;
 
-const APP_DIR: &str = "deskbeat";
-/// The folder name under the app's previous name, Sonic Veil.
-const OLD_APP_DIR: &str = "sonic-veil";
+const APP_DIR: &str = "inlay";
+/// The folder names under the app's earlier names, newest first: Deskbeat,
+/// then Sonic Veil.
+const OLD_APP_DIRS: [&str; 2] = ["deskbeat", "sonic-veil"];
 const LOG_LIMIT_BYTES: u64 = 512 * 1024;
 
 /// Milliseconds since the app started, on a clock that never goes backwards.
@@ -68,17 +69,24 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Brings the settings, fonts and cache kept under the previous name over to
-/// this one, once: a rename must not cost anyone their setup. A folder that
-/// cannot be moved, because the old app is still running, is copied.
+/// Brings the settings, fonts and cache kept under an earlier name over to
+/// this one, once: a rename must not cost anyone their setup. Only the
+/// newest earlier folder is taken. A folder that cannot be moved, because
+/// the old app is still running, is copied.
 fn adopt_old_folders() {
     let mut failures = Vec::new();
     for variable in ["APPDATA", "LOCALAPPDATA"] {
         let new = env_dir(variable);
-        let old = new.with_file_name(OLD_APP_DIR);
-        if !old.is_dir() || new.exists() {
+        if new.exists() {
             continue;
         }
+        let Some(old) = OLD_APP_DIRS
+            .iter()
+            .map(|name| new.with_file_name(name))
+            .find(|old| old.is_dir())
+        else {
+            continue;
+        };
         if std::fs::rename(&old, &new).is_err()
             && let Err(error) = copy_dir(&old, &new)
         {
@@ -105,7 +113,7 @@ pub fn data_dir() -> PathBuf {
 /// this file is the only place a failure can be seen.
 pub fn log(message: &str) {
     let dir = data_dir();
-    let path = dir.join("deskbeat.log");
+    let path = dir.join("inlay.log");
     let _ = std::fs::create_dir_all(&dir);
     if std::fs::metadata(&path).is_ok_and(|meta| meta.len() > LOG_LIMIT_BYTES) {
         let _ = std::fs::remove_file(&path);
@@ -148,13 +156,13 @@ impl Notify {
 
 /// Looks one track up the way the lyrics widget would, and prints what came back.
 fn probe_lyrics(title: &str, artist: &str) {
-    let query = deskbeat_core::lrclib::Query {
+    let query = inlay_core::lrclib::Query {
         title: title.to_owned(),
         artist: artist.to_owned(),
         album: String::new(),
         duration_ms: 0,
     };
-    let servers = deskbeat_core::lyricsplus::SERVERS.map(str::to_owned);
+    let servers = inlay_core::lyricsplus::SERVERS.map(str::to_owned);
     match lyrics::words(&query, &servers) {
         Some(lines) => {
             println!("word-timed, {} lines", lines.len());

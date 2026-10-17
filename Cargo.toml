@@ -10,7 +10,7 @@ license = "MIT"
 repository = "https://github.com/akshit-bansal11/deskbeat"
 
 [workspace.dependencies]
-deskbeat-core = { path = "crates/core" }
+inlay-core = { path = "crates/core" }
 rustfft = "6.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

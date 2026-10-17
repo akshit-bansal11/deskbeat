@@ -1,6 +1,6 @@
 This project inherits every rule in `~/.claude/CLAUDE.md`. Rules below add to or override it. Nothing here restates it.
 
-Deskbeat was the mini project Sonic Veil until 2026-10-03 and inherited `F:/projects/mini-projects/CLAUDE.md`. It no longer does. This file carries forward the handful of rules from that one that Deskbeat still depends on, and nothing else.
+Inlay was called Deskbeat until 2026-10-17, and before that was the mini project Sonic Veil until 2026-10-03, which inherited `F:/projects/mini-projects/CLAUDE.md`. It no longer does. This file carries forward the handful of rules from that one that Inlay still depends on, and nothing else. The repository and the website's domain still carry the name Deskbeat until the owner renames them.
 
 ## Notion is the source of truth for everything that is not code
 
@@ -35,14 +35,14 @@ There is **no Rust toolchain on this machine** (no cargo, rustc or MSVC), by cho
 - The gate is `scripts/check.ps1`: it writes locally, and CI runs it with `-Ci`, which does not.
 - Locally only formatting can run, with a standalone `rustfmt.exe` unpacked into the session scratchpad from static.rust-lang.org (the `rustfmt` and `rustc` components; rustfmt needs rustc's DLLs beside it). Run it as `rustfmt --edition 2024 crates/core/src/lib.rs crates/app/src/main.rs` before every commit.
 - After a `Cargo.toml` change that alters third-party packages, dispatch `lockfile.yml` on the branch and commit the `Cargo.lock` it uploads. CI uses `--locked`. A version bump of the two workspace packages is two lines in `Cargo.lock` and can be edited by hand.
-- To look at a visual change: download the `deskbeat-windows-x64` artifact of the CI run and view its `snapshots/*.png`, or run its exe with `--snapshot <dir>`.
+- To look at a visual change: download the `inlay-windows-x64` artifact of the CI run and view its `snapshots/*.png`, or run its exe with `--snapshot <dir>`.
 
 ## Code rules that are easy to break
 
 - `crates/core` must stay free of Windows types so every test runs anywhere. Anything that needs a window, a device or Spotify goes in `crates/app`.
 - Widgets draw only when something changed. A widget that returns `Wake::Frame` while nothing on it is moving is a bug: it is the whole reason this app exists instead of Rainmeter.
 - The `windows` crate is pinned to 0.62. Its API moves between minor versions; do not bump it as a drive-by. Dependabot is told to leave it alone.
-- The owner's real config is `%APPDATA%\deskbeat\config.toml`. Never edit it. Test against a copy, with `APPDATA` and `LOCALAPPDATA` pointed at a scratch folder.
+- The owner's real config is `%APPDATA%\inlay\config.toml` (moved over from `%APPDATA%\deskbeat` on the first run under the new name). Never edit it. Test against a copy, with `APPDATA` and `LOCALAPPDATA` pointed at a scratch folder.
 - Only one instance runs. A second launch hands over to the first and exits, so a test run does nothing while the owner's copy is in the tray.
 
 ## What is the owner's to do, not a session's
@@ -57,7 +57,7 @@ Hand over a command; never route around a refusal.
 
 ## Releases
 
-Pushing a version tag triggers `.github/workflows/release.yml`, which runs the gate, builds the exe, checks the tag against the crate version, and attaches it named for the version, `Deskbeat-1.0.1.exe`, with `SHA256SUMS.txt` and a provenance attestation. Notes come from that version's section of `CHANGELOG.md`, so the section must exist before the tag. Running the workflow by hand makes a private draft instead.
+Pushing a version tag triggers `.github/workflows/release.yml`, which runs the gate, builds the exe, checks the tag against the crate version, and attaches it named for the version, `Inlay-<version>.exe`, with `SHA256SUMS.txt` and a provenance attestation. Notes come from that version's section of `CHANGELOG.md`, so the section must exist before the tag. Running the workflow by hand makes a private draft instead.
 
 A release is: a pull request that bumps `version` in `Cargo.toml` and the two workspace packages in `Cargo.lock`, moves Unreleased into a dated section of `CHANGELOG.md`, and adds a `packaging/winget/<version>` folder; the owner merges it; then the tag is pushed on the merge commit. The winget folder's `InstallerSha256` is only known after the release, so it lands in a follow-up pull request.
 

@@ -1,6 +1,6 @@
 # Architecture
 
-Deskbeat is one Windows process that draws four widgets on the desktop for whatever Spotify is playing: a spectrum visualizer, synced lyrics, a clock and a now-playing player. It is not a skin engine. There are no plugins, no scripts and no user-authored skins; every visual and behavioural parameter of the four widgets is a setting instead.
+Inlay is one Windows process that sets four live widgets into the desktop: a clock, a spectrum visualizer, synced lyrics and a now-playing player. The last three follow whatever Spotify plays. It is not a skin engine. There are no plugins, no scripts and no user-authored skins; every visual and behavioural parameter of the four widgets is a setting instead.
 
 The reason it exists is cost. A Rainmeter setup re-runs interpreted measures on timers and redraws whether or not anything changed. Here each widget is compiled, sleeps until something it shows has changed, and is not drawn at all while it is covered.
 
@@ -15,6 +15,7 @@ crates/core   pure logic, no Windows types, unit tested anywhere
   color       hex, HSV, the accent taken from album art
   timefmt     clock formats
   config      the TOML schema, defaults, clamps, migrations
+  mark        the logo's geometry and colours, shared by the tray, the menu and the icon script
 
 crates/app    the exe
   UI thread       message loop, windows, Direct2D drawing, settings panel
@@ -61,7 +62,7 @@ Word timing from a server is used as it is: words can overlap, as with backgroun
 
 ## Settings and state
 
-Everything is in `%APPDATA%\deskbeat\config.toml`, and the file reloads when it is saved. Loading lays the file over the default config table by table, so a partial file keeps every default it does not mention, and unknown keys are ignored. Keys that were renamed are carried over, and every number is clamped, so a hand-edited or older file cannot put the app in a state the settings panel could not.
+Everything is in `%APPDATA%\inlay\config.toml`, and the file reloads when it is saved. Loading lays the file over the default config table by table, so a partial file keeps every default it does not mention, and unknown keys are ignored. Keys that were renamed are carried over, as is the whole folder from the app's earlier names (`deskbeat`, then `sonic-veil`) on first run, and every number is clamped, so a hand-edited or older file cannot put the app in a state the settings panel could not.
 
 The settings panel is an ordinary window drawn by the app itself, immediate-mode: each frame it lays its rows out from the config and writes changes straight back.
 
@@ -71,10 +72,10 @@ The settings panel is an ordinary window drawn by the app itself, immediate-mode
 
 `crates/app` tests what can be tested without a window: sample mixing, the lyric widget's place-in-the-song logic, the settings panel's hex field, the tray icon's pixels.
 
-`deskbeat.exe --snapshot <dir>` renders every widget and the settings panel to PNG from made-up data, with no GPU, Spotify or audio device. CI runs it on every push. It proves the drawing code runs and lets a change be looked at; it does not exercise the app loop, a pointer, or a live session.
+`inlay.exe --snapshot <dir>` renders every widget and the settings panel to PNG from made-up data, with no GPU, Spotify or audio device. CI runs it on every push. It proves the drawing code runs and lets a change be looked at; it does not exercise the app loop, a pointer, or a live session.
 
 ## Build and release
 
 There is one gate, `scripts/check.ps1`: format, clippy with warnings as errors, tests. CI runs it non-mutating on every push and pull request, then builds the exe and renders the snapshots.
 
-Pushing a `v*` tag runs the release workflow: the gate again, a release build, a check that the tag matches the crate version, the snapshot smoke test, then a GitHub Release carrying `Deskbeat-<version>.exe`, `SHA256SUMS.txt` and a build provenance attestation, with notes taken from that version's section of `CHANGELOG.md`. Running the same workflow by hand attaches the build to a private draft release instead.
+Pushing a `v*` tag runs the release workflow: the gate again, a release build, a check that the tag matches the crate version, the snapshot smoke test, then a GitHub Release carrying `Inlay-<version>.exe`, `SHA256SUMS.txt` and a build provenance attestation, with notes taken from that version's section of `CHANGELOG.md`. Running the same workflow by hand attaches the build to a private draft release instead.

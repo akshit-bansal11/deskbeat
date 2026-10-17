@@ -11,8 +11,8 @@
 
 use std::ffi::c_void;
 
-use deskbeat_core::color::{Rgba, hsv_to_rgb, parse_hex, rgb_to_hsv, to_hex, with_alpha};
-use deskbeat_core::config::*;
+use inlay_core::color::{Rgba, hsv_to_rgb, parse_hex, rgb_to_hsv, to_hex, with_alpha};
+use inlay_core::config::*;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
@@ -23,7 +23,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, Result, w};
 
 use crate::gfx::{Gfx, ICON_FONT, Surface, TextStyle, rect};
-use crate::menu::{INK, PAPER, mark};
+use crate::menu::{BONE, INK, mark};
 use crate::window::{self, Mouse};
 
 pub const WIDTH: f32 = 780.0;
@@ -59,13 +59,13 @@ const CONTROL_SHARE: f32 = 0.58;
 const WHEEL_STEP: f32 = 56.0;
 
 const BACKGROUND: Rgba = INK;
-const TEXT: Rgba = [PAPER[0], PAPER[1], PAPER[2], 0.92];
-const DIM: Rgba = [PAPER[0], PAPER[1], PAPER[2], 0.56];
+const TEXT: Rgba = [BONE[0], BONE[1], BONE[2], 0.92];
+const DIM: Rgba = [BONE[0], BONE[1], BONE[2], 0.56];
 const TRACK: Rgba = [1.0, 1.0, 1.0, 0.14];
 /// Opaque, because a card is painted in overlapping pieces.
 const CARD: Rgba = [0.11, 0.11, 0.125, 1.0];
 const SIDE: Rgba = [0.055, 0.055, 0.065, 1.0];
-const HAIRLINE: Rgba = [PAPER[0], PAPER[1], PAPER[2], 0.07];
+const HAIRLINE: Rgba = [BONE[0], BONE[1], BONE[2], 0.07];
 
 pub const TABS: [&str; 5] = ["General", "Clock", "Player", "Lyrics", "Visualizer"];
 /// Segoe Fluent Icons for the sidebar: settings, clock, music, text, chart.
@@ -343,7 +343,7 @@ impl View {
         // The sidebar: the mark, the tabs, and the two things that leave the panel.
         mark(ui.g, 20.0, 22.0, 28.0)?;
         let name = rect(58.0, 22.0, SIDEBAR - 66.0, 28.0);
-        ui.text("Deskbeat", name, 15.0, 600, Align::Left, TEXT)?;
+        ui.text("Inlay", name, 15.0, 600, Align::Left, TEXT)?;
         for (i, name) in TABS.iter().enumerate() {
             let item = rect(12.0, 74.0 + 40.0 * i as f32, SIDEBAR - 24.0, 36.0);
             let selected = self.tab == i;
@@ -351,9 +351,9 @@ impl View {
                 turned_to = Some((i, self.section[i]));
             }
             if selected {
-                ui.g.fill_round(item, 9.0, with_alpha(PAPER, 0.1));
+                ui.g.fill_round(item, 9.0, with_alpha(BONE, 0.1));
             } else if ui.hot(item) {
-                ui.g.fill_round(item, 9.0, with_alpha(PAPER, 0.05));
+                ui.g.fill_round(item, 9.0, with_alpha(BONE, 0.05));
             }
             let color = if selected { TEXT } else { DIM };
             let icon = rect(item.left + 10.0, item.top, 22.0, 36.0);
@@ -400,7 +400,7 @@ impl View {
                 turned_to = Some((self.tab, i));
             }
             if selected {
-                ui.g.fill_round(segment, 7.0, with_alpha(PAPER, 0.16));
+                ui.g.fill_round(segment, 7.0, with_alpha(BONE, 0.16));
             }
             let (weight, color) = if selected { (600, TEXT) } else { (400, DIM) };
             ui.text(name, segment, 12.5, weight, Align::Center, color)?;
@@ -456,7 +456,7 @@ impl Panel {
         let (ax, ay, aw, ah) = window::work_area();
         let bounds = (ax + (aw - w) / 2, ay + (ah - h) / 2, w, h);
 
-        let hwnd = window::create_panel(w!("Deskbeat settings"), style, bounds)?;
+        let hwnd = window::create_panel(w!("Inlay settings"), style, bounds)?;
         let dark = BOOL(1);
         unsafe {
             // Cosmetic: without it the title bar is white above a dark panel.
@@ -1316,7 +1316,7 @@ fn general(ui: &mut Ui, cfg: &mut Config, section: usize) -> Result<()> {
             ui.toggle("Start with Windows", &mut autostart)?;
             ui.toggle_hidden = hidden != ui.status.hidden;
             ui.toggle_autostart = autostart != ui.status.autostart;
-            if ui.action("Deskbeat", "Quit")? {
+            if ui.action("Inlay", "Quit")? {
                 ui.quit = true;
             }
             Ok(())

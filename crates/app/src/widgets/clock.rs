@@ -1,7 +1,7 @@
 //! Day, time and date, each placed and styled on its own.
 
-use deskbeat_core::config::ClockRow;
-use deskbeat_core::timefmt::{format, shows_seconds};
+use inlay_core::config::ClockRow;
+use inlay_core::timefmt::{format, shows_seconds};
 use windows::core::Result;
 
 use super::{Ctx, Part, Tick, Wake, Widget, draw_card, draw_placed, label_color, place_label};

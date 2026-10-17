@@ -3,9 +3,9 @@
 //! start-with-Windows switch and Quit. A right-click on the icon opens it;
 //! clicking anywhere else, or Escape, closes it.
 
-use deskbeat_core::color::{Rgba, with_alpha};
-use deskbeat_core::config::Align;
-use deskbeat_core::mark;
+use inlay_core::color::{Rgba, with_alpha};
+use inlay_core::config::Align;
+use inlay_core::mark;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -17,9 +17,7 @@ use crate::gfx::{Gfx, ICON_FONT, Surface, TextStyle, rect};
 use crate::window::{self, Mouse};
 
 /// The three colours everything of the app's own is drawn in.
-pub const INK: Rgba = [0.075, 0.075, 0.086, 1.0];
-pub const PAPER: Rgba = [0.961, 0.957, 0.941, 1.0];
-pub const EMBER: Rgba = [1.0, 0.42, 0.271, 1.0];
+pub use inlay_core::mark::{BONE, INK, ORANGE};
 
 pub const WIDTH: f32 = 264.0;
 pub const HEIGHT: f32 = HEADER + 3.0 * ROW + 2.0 * (GAP + PAD);
@@ -30,7 +28,7 @@ const ROW: f32 = 36.0;
 const GAP: f32 = 9.0;
 const RADIUS: f32 = 14.0;
 const FONT: &str = "Segoe UI Variable Display";
-const NAME: &str = "Deskbeat";
+const NAME: &str = "Inlay";
 const VERSION: &str = concat!("Version ", env!("CARGO_PKG_VERSION"));
 const OPEN_GLYPH: &str = "\u{E8A7}";
 const ESCAPE: u32 = 27;
@@ -89,19 +87,27 @@ fn text(
     Ok(())
 }
 
-/// The Deskbeat mark, `side` across, with its top-left corner at `(x, y)`,
-/// as in `assets/deskbeat-dark.svg`.
+/// The Inlay mark, `side` across, with its top-left corner at `(x, y)`, as
+/// in `assets/inlay.svg`.
 pub fn mark(g: &Gfx, x: f32, y: f32, side: f32) -> Result<()> {
     let unit = side / mark::SIDE;
     let at = |(px, py): (f32, f32)| (x + px * unit, y + py * unit);
-    g.fill_round(rect(x, y, side, side), mark::CORNER * unit, PAPER);
-    let [from, to] = mark::DESK;
-    g.fill_capsule(at(from), at(to), mark::DESK_WIDTH * unit, INK);
-    for [from, to] in mark::rays() {
-        g.fill_capsule(at(from), at(to), mark::RAY_WIDTH * unit, INK);
+    g.fill_round(rect(x, y, side, side), mark::CORNER * unit, INK);
+    for (shape, colour) in mark::PIECES {
+        match shape {
+            mark::Shape::Disc { centre, radius } => {
+                let (cx, cy) = at(centre);
+                g.fill_circle(cx, cy, radius * unit, colour);
+            }
+            mark::Shape::Quarter {
+                centre,
+                radius,
+                from,
+                to,
+            } => g.fill_quarter(at(centre), at(from), at(to), radius * unit, colour)?,
+        }
     }
-    let (sx, sy) = at(mark::SUN);
-    g.fill_dome(sx, sy, mark::SUN_RADIUS * unit, EMBER)
+    Ok(())
 }
 
 /// Paints the card at the origin, `WIDTH` by `HEIGHT`. `mouse` is the pointer
@@ -111,7 +117,7 @@ pub fn paint(g: &mut Gfx, mouse: (f32, f32), autostart: bool) -> Result<()> {
     g.stroke_round(
         rect(0.5, 0.5, WIDTH - 1.0, HEIGHT - 1.0),
         RADIUS,
-        with_alpha(PAPER, 0.12),
+        with_alpha(BONE, 0.12),
         1.0,
     );
 
@@ -120,12 +126,12 @@ pub fn paint(g: &mut Gfx, mouse: (f32, f32), autostart: bool) -> Result<()> {
     mark(g, left, PAD + (HEADER - side) / 2.0, side)?;
     let beside = left + side + 12.0;
     let line = rect(beside, PAD + 9.0, WIDTH - beside - PAD, 20.0);
-    text(g, NAME, line, (FONT, 15.0, 600), Align::Left, PAPER)?;
-    let dim = with_alpha(PAPER, 0.56);
+    text(g, NAME, line, (FONT, 15.0, 600), Align::Left, BONE)?;
+    let dim = with_alpha(BONE, 0.56);
     let line = rect(beside, PAD + 28.0, WIDTH - beside - PAD, 18.0);
     text(g, VERSION, line, (FONT, 12.0, 400), Align::Left, dim)?;
 
-    let hairline = with_alpha(PAPER, 0.1);
+    let hairline = with_alpha(BONE, 0.1);
     for top in [PAD + HEADER, PAD + HEADER + GAP + 2.0 * ROW] {
         g.fill_rect(rect(PAD, top + GAP / 2.0, WIDTH - 2.0 * PAD, 1.0), hairline);
     }
@@ -134,10 +140,10 @@ pub fn paint(g: &mut Gfx, mouse: (f32, f32), autostart: bool) -> Result<()> {
     for (pick, label, top) in ROWS {
         let row = row_box(top);
         if hot == Some(pick) {
-            g.fill_round(row, 8.0, with_alpha(PAPER, 0.09));
+            g.fill_round(row, 8.0, with_alpha(BONE, 0.09));
         }
         let inner = rect(row.left + 10.0, row.top, row.right - row.left - 20.0, ROW);
-        text(g, label, inner, (FONT, 13.5, 400), Align::Left, PAPER)?;
+        text(g, label, inner, (FONT, 13.5, 400), Align::Left, BONE)?;
         let mid = row.top + ROW / 2.0;
         match pick {
             Pick::GitHub => text(
@@ -152,9 +158,9 @@ pub fn paint(g: &mut Gfx, mouse: (f32, f32), autostart: bool) -> Result<()> {
                 // The same switch as the settings panel's, in the accent.
                 let track = rect(inner.right - 34.0, mid - 10.0, 34.0, 20.0);
                 let fill = if autostart {
-                    EMBER
+                    ORANGE
                 } else {
-                    with_alpha(PAPER, 0.16)
+                    with_alpha(BONE, 0.16)
                 };
                 g.fill_round(track, 10.0, fill);
                 let knob = if autostart {
@@ -162,7 +168,7 @@ pub fn paint(g: &mut Gfx, mouse: (f32, f32), autostart: bool) -> Result<()> {
                 } else {
                     track.left + 10.0
                 };
-                g.fill_circle(knob, mid, 7.5, PAPER);
+                g.fill_circle(knob, mid, 7.5, BONE);
             }
             Pick::Quit => {}
         }

@@ -1,52 +1,108 @@
-//! The Deskbeat mark, as in `assets/deskbeat-dark.svg`: a sun coming up off a
-//! desk, its rays a spectrum caught mid-song. Your desktop is the horizon and
-//! the music is what rises over it; the sun is the one thing in the accent.
+//! The Inlay mark, as in `assets/inlay.svg`: four flat pieces set into one
+//! tile, one for each widget, the way an inlay sets pieces into a surface.
+//! Two quarter discs face each other across one diagonal and two discs sit
+//! on the other.
 //!
 //! Everything is on the SVG's 108-unit grid. `scripts/make_icon.py` holds the
 //! same numbers for the exe's icon.
 
+use crate::color::Rgba;
+
 /// The tile, and the radius of its corners.
 pub const SIDE: f32 = 108.0;
 pub const CORNER: f32 = 26.0;
-/// The sun's centre, which is also the horizon it is cut off at, and its radius.
-pub const SUN: (f32, f32) = (54.0, 72.0);
-pub const SUN_RADIUS: f32 = 15.0;
-/// The desk: a capsule between two centres.
-pub const DESK: [(f32, f32); 2] = [(24.0, 83.0), (84.0, 83.0)];
-pub const DESK_WIDTH: f32 = 12.0;
-pub const RAY_WIDTH: f32 = 10.0;
-/// How far from the sun's centre every ray starts.
-const RAY_FROM: f32 = 23.0;
-/// Each ray's angle in degrees, anticlockwise from pointing right, and its
-/// length. The lengths are uneven on purpose: a spectrum, not a sunburst.
-const RAYS: [(f32, f32); 5] = [
-    (162.0, 11.0),
-    (126.0, 20.0),
-    (90.0, 27.0),
-    (54.0, 22.0),
-    (18.0, 14.0),
+
+/// The brand's five colours. Everything of the app's own is drawn in them.
+pub const INK: Rgba = rgb(0x15, 0x15, 0x1C);
+pub const BONE: Rgba = rgb(0xF3, 0xEF, 0xE6);
+pub const ORANGE: Rgba = rgb(0xFF, 0x6B, 0x2C);
+pub const COBALT: Rgba = rgb(0x33, 0x55, 0xFF);
+pub const SUN: Rgba = rgb(0xFF, 0xC9, 0x3C);
+
+const fn rgb(r: u8, g: u8, b: u8) -> Rgba {
+    [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Shape {
+    Disc {
+        centre: (f32, f32),
+        radius: f32,
+    },
+    /// A quarter of a disc. `from` and `to` are the two ends of its arc,
+    /// which runs clockwise from one to the other.
+    Quarter {
+        centre: (f32, f32),
+        radius: f32,
+        from: (f32, f32),
+        to: (f32, f32),
+    },
+}
+
+/// The four pieces, each in its cell of a two-by-two grid on the tile.
+pub const PIECES: [(Shape, Rgba); 4] = [
+    (
+        Shape::Quarter {
+            centre: (20.0, 52.0),
+            radius: 32.0,
+            from: (20.0, 20.0),
+            to: (52.0, 52.0),
+        },
+        COBALT,
+    ),
+    (
+        Shape::Disc {
+            centre: (72.0, 36.0),
+            radius: 16.0,
+        },
+        ORANGE,
+    ),
+    (
+        Shape::Disc {
+            centre: (36.0, 72.0),
+            radius: 16.0,
+        },
+        SUN,
+    ),
+    (
+        Shape::Quarter {
+            centre: (88.0, 88.0),
+            radius: 32.0,
+            from: (56.0, 88.0),
+            to: (88.0, 56.0),
+        },
+        BONE,
+    ),
 ];
 
-/// Each ray's two end centres. They are capsules `RAY_WIDTH` across.
-pub fn rays() -> impl Iterator<Item = [(f32, f32); 2]> {
-    RAYS.iter().map(|&(degrees, length)| {
-        let (sin, cos) = degrees.to_radians().sin_cos();
-        let at = |r: f32| (SUN.0 + r * cos, SUN.1 - r * sin);
-        [at(RAY_FROM), at(RAY_FROM + length)]
-    })
+impl Shape {
+    /// How far `(x, y)` is outside the shape, in units; negative inside.
+    fn outside(self, x: f32, y: f32) -> f32 {
+        match self {
+            Shape::Disc { centre, radius } => (x - centre.0).hypot(y - centre.1) - radius,
+            Shape::Quarter {
+                centre,
+                radius,
+                from,
+                to,
+            } => {
+                // The disc, cut by the two straight edges that run from the
+                // centre out to the ends of the arc. A point is inside the
+                // quarter when it lies along both edges' directions.
+                let behind = |end: (f32, f32)| {
+                    let (dx, dy) = ((end.0 - centre.0) / radius, (end.1 - centre.1) / radius);
+                    -((x - centre.0) * dx + (y - centre.1) * dy)
+                };
+                let disc = (x - centre.0).hypot(y - centre.1) - radius;
+                disc.max(behind(from)).max(behind(to))
+            }
+        }
+    }
 }
 
-/// How far `(x, y)` is outside a capsule; negative inside.
-fn capsule(x: f32, y: f32, [a, b]: [(f32, f32); 2], width: f32) -> f32 {
-    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
-    let t = (((x - a.0) * dx + (y - a.1) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
-    (x - a.0 - t * dx).hypot(y - a.1 - t * dy) - width / 2.0
-}
-
-/// How much of a pixel the shapes cover, in a mark `side` pixels across:
-/// the tile, the ink (desk and rays) on it, and the sun on it. `(x, y)` is
-/// the pixel's centre. The ink and the sun never overlap.
-pub fn cover(x: f32, y: f32, side: f32) -> (f32, f32, f32) {
+/// The colour of a pixel, straight alpha, in a mark `side` pixels across.
+/// `(x, y)` is the pixel's centre.
+pub fn pixel(x: f32, y: f32, side: f32) -> Rgba {
     let unit = side / SIDE;
     // Distances in units, turned into pixels and then into a coverage.
     let coverage = |outside: f32| (0.5 - outside * unit).clamp(0.0, 1.0);
@@ -55,15 +111,22 @@ pub fn cover(x: f32, y: f32, side: f32) -> (f32, f32, f32) {
     let half = SIDE / 2.0;
     let dx = (x - half).abs() - (half - CORNER);
     let dy = (y - half).abs() - (half - CORNER);
-    let tile = dx.max(0.0).hypot(dy.max(0.0)) - CORNER;
+    let tile = coverage(dx.max(0.0).hypot(dy.max(0.0)) - CORNER);
 
-    let ink = rays()
-        .map(|ray| capsule(x, y, ray, RAY_WIDTH))
-        .fold(capsule(x, y, DESK, DESK_WIDTH), f32::min);
-    // A disc with everything below the horizon cut away.
-    let sun = ((x - SUN.0).hypot(y - SUN.1) - SUN_RADIUS).max(y - SUN.1);
-
-    (coverage(tile), coverage(ink), coverage(sun))
+    // The pieces never overlap, so each blends over the tile alone.
+    let mut colour = INK;
+    for (shape, piece) in PIECES {
+        let cover = coverage(shape.outside(x, y));
+        if cover >= 1.0 {
+            colour = piece;
+        } else {
+            for i in 0..3 {
+                colour[i] += (piece[i] - colour[i]) * cover;
+            }
+        }
+    }
+    colour[3] = tile;
+    colour
 }
 
 #[cfg(test)]
@@ -71,28 +134,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_sun_sits_on_the_horizon_under_the_rays_and_over_the_desk() {
-        let side = 108.0;
-        let at = |x: f32, y: f32| cover(x, y, side);
-        assert_eq!(at(0.5, 0.5).0, 0.0, "the corner is cut off");
-        assert_eq!(at(54.0, 10.0), (1.0, 0.0, 0.0), "bare tile above the rays");
-        assert_eq!(at(54.0, 64.0), (1.0, 0.0, 1.0), "the sun");
-        assert_eq!(at(54.0, 76.0), (1.0, 0.0, 0.0), "nothing under the horizon");
-        assert_eq!(at(54.0, 83.0), (1.0, 1.0, 0.0), "the desk");
-        assert_eq!(at(54.0, 30.0), (1.0, 1.0, 0.0), "the middle ray");
+    fn each_piece_sits_in_its_own_cell_in_its_own_colour() {
+        let at = |x: f32, y: f32| pixel(x, y, SIDE);
+        assert_eq!(at(0.5, 0.5)[3], 0.0, "the corner is cut off");
+        assert_eq!(at(54.0, 54.0), INK, "the gap between the cells");
+        assert_eq!(at(30.0, 40.0), COBALT, "the quarter at the top left");
+        assert_eq!(at(48.0, 22.0), INK, "outside the top left quarter's arc");
+        assert_eq!(at(72.0, 36.0), ORANGE);
+        assert_eq!(at(36.0, 72.0), SUN);
+        assert_eq!(at(80.0, 80.0), BONE, "the quarter at the bottom right");
+        assert_eq!(
+            at(60.0, 60.0),
+            INK,
+            "outside the bottom right quarter's arc"
+        );
     }
 
     #[test]
-    fn the_rays_are_uneven_and_never_touch_the_sun_or_each_other() {
-        let lengths: Vec<f32> = rays().map(|[a, b]| (b.0 - a.0).hypot(b.1 - a.1)).collect();
-        assert!(lengths.windows(2).any(|w| (w[0] - w[1]).abs() > 1.0));
-        // The gap between neighbours at their inner ends, which are closest.
-        let starts: Vec<_> = rays().map(|[a, _]| a).collect();
-        for pair in starts.windows(2) {
-            let gap = (pair[0].0 - pair[1].0).hypot(pair[0].1 - pair[1].1) - RAY_WIDTH;
-            assert!(gap > 2.0, "rays {pair:?} are {gap} apart");
+    fn the_pieces_keep_apart() {
+        // No point within a unit of one piece is inside another.
+        for row in 0..216 {
+            for column in 0..216 {
+                let (x, y) = (column as f32 / 2.0, row as f32 / 2.0);
+                let near = PIECES
+                    .iter()
+                    .filter(|(shape, _)| shape.outside(x, y) < 1.0)
+                    .count();
+                assert!(near <= 1, "pieces meet at ({x}, {y})");
+            }
         }
-        const { assert!(RAY_FROM - RAY_WIDTH / 2.0 > SUN_RADIUS + 2.0) };
-        const { assert!(DESK[0].1 - DESK_WIDTH / 2.0 > SUN.1 + 2.0) };
     }
 }

@@ -1,7 +1,7 @@
 //! The notification-area icon. Double-clicking it opens the settings panel;
 //! a right-click opens the menu in `menu.rs`.
 
-use deskbeat_core::mark;
+use inlay_core::mark;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject};
 use windows::Win32::UI::Shell::{
@@ -13,28 +13,21 @@ use windows::core::Result;
 use crate::window::WM_APP_TRAY;
 
 const ICON_SIDE: usize = 32;
-const TIP: &str = "Deskbeat: double-click for settings, right-click for more";
+const TIP: &str = "Inlay: double-click for settings, right-click for more";
 
-/// The mark's three colours, as in `assets/deskbeat-dark.svg`: a paper tile,
-/// which holds against a dark taskbar, ink desk and rays, and the sun in the accent.
-const PAPER: [f32; 3] = [245.0, 244.0, 240.0];
-const INK: [f32; 3] = [19.0, 19.0, 22.0];
-const EMBER: [f32; 3] = [204.0, 53.0, 16.0];
-
-/// The Deskbeat mark, drawn into premultiplied BGRA. Made in code so the
-/// tray needs no resource file.
+/// The Inlay mark, drawn into premultiplied BGRA. Made in code so the tray
+/// needs no resource file.
 fn icon_pixels() -> Vec<u8> {
     let mut pixels = vec![0u8; ICON_SIDE * ICON_SIDE * 4];
     for (i, px) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let (x, y) = ((i % ICON_SIDE) as f32 + 0.5, (i / ICON_SIDE) as f32 + 0.5);
-        let (alpha, ink, ember) = mark::cover(x, y, ICON_SIDE as f32);
-        let channel = |i: usize| PAPER[i] * (1.0 - ink - ember) + INK[i] * ink + EMBER[i] * ember;
-        let (r, g, b) = (channel(0), channel(1), channel(2));
+        let [r, g, b, a] = mark::pixel(x, y, ICON_SIDE as f32);
+        let channel = |v: f32| (v * a * 255.0).round() as u8;
         *px = [
-            (b * alpha).round() as u8,
-            (g * alpha).round() as u8,
-            (r * alpha).round() as u8,
-            (255.0 * alpha).round() as u8,
+            channel(b),
+            channel(g),
+            channel(r),
+            (a * 255.0).round() as u8,
         ];
     }
     pixels
@@ -108,20 +101,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_icon_has_a_paper_tile_transparent_corners_an_ink_desk_and_an_accent_sun() {
+    fn the_icon_is_the_mark_on_an_ink_tile_with_its_corners_cut() {
         let pixels = icon_pixels();
         // Blue, green, red, alpha.
         let at = |x: usize, y: usize| &pixels[(y * ICON_SIDE + x) * 4..][..4];
-        let (paper, ink, ember) = ([240, 244, 245, 255], [22, 19, 19, 255], [16, 53, 204, 255]);
+        let bgra =
+            |c: inlay_core::color::Rgba| [c[2], c[1], c[0], 1.0].map(|v| (v * 255.0).round() as u8);
         assert_eq!(at(0, 0)[3], 0, "the corner is cut off");
-        assert_eq!(
-            (at(2, 16), at(29, 16)),
-            (&paper[..], &paper[..]),
-            "the tile"
-        );
-        assert_eq!(at(16, 24), ink, "the desk");
-        assert_eq!(at(16, 9), ink, "the middle ray");
-        assert_eq!(at(15, 19), ember, "the sun");
-        assert_eq!(at(16, 2), paper, "the sky over it");
+        assert_eq!(at(16, 16), bgra(mark::INK), "the gap between the pieces");
+        assert_eq!(at(9, 11), bgra(mark::COBALT));
+        assert_eq!(at(21, 10), bgra(mark::ORANGE));
+        assert_eq!(at(10, 21), bgra(mark::SUN));
+        assert_eq!(at(23, 23), bgra(mark::BONE));
     }
 }

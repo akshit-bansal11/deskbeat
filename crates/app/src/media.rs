@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use deskbeat_core::color::{Rgba, accent_from_bgra, downsample_bgra};
+use inlay_core::color::{Rgba, accent_from_bgra, downsample_bgra};
 use windows::Foundation::TypedEventHandler;
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as Session,

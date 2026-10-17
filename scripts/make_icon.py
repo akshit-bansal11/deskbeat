@@ -14,14 +14,16 @@ import struct
 import zlib
 from pathlib import Path
 
-# The mark on its 108-unit grid, as in crates/core/src/mark.rs, coloured as in
-# tray.rs and assets/deskbeat-dark.svg.
-PAPER, INK, EMBER = (245, 244, 240), (19, 19, 22), (204, 53, 16)
+# The mark on its 108-unit grid, as in crates/core/src/mark.rs.
+INK = (0x15, 0x15, 0x1C)
 SIDE, CORNER = 108, 26
-SUN, SUN_RADIUS = (54, 72), 15
-DESK, DESK_WIDTH = ((24, 83), (84, 83)), 12
-RAY_FROM, RAY_WIDTH = 23, 10
-RAYS = [(162, 11), (126, 20), (90, 27), (54, 22), (18, 14)]
+# (kind, centre, radius, arc start, arc end, colour). The arcs run clockwise.
+PIECES = [
+    ("quarter", (20, 52), 32, (20, 20), (52, 52), (0x33, 0x55, 0xFF)),
+    ("disc", (72, 36), 16, None, None, (0xFF, 0x6B, 0x2C)),
+    ("disc", (36, 72), 16, None, None, (0xFF, 0xC9, 0x3C)),
+    ("quarter", (88, 88), 32, (56, 88), (88, 56), (0xF3, 0xEF, 0xE6)),
+]
 SIZES = [16, 20, 24, 32, 40, 48, 64, 256]
 
 RT_ICON, RT_GROUP_ICON = 3, 14
@@ -32,25 +34,24 @@ def clamp(v):
     return max(0.0, min(1.0, v))
 
 
-def rays():
-    for degrees, length in RAYS:
-        cos, sin = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
-        yield tuple((SUN[0] + r * cos, SUN[1] - r * sin) for r in (RAY_FROM, RAY_FROM + length))
+def outside(piece, x, y):
+    """How far (x, y) is outside a piece, in units; negative inside."""
+    kind, (cx, cy), radius, start, end, _ = piece
+    disc = math.hypot(x - cx, y - cy) - radius
+    if kind == "disc":
+        return disc
 
+    def behind(point):
+        dx, dy = (point[0] - cx) / radius, (point[1] - cy) / radius
+        return -((x - cx) * dx + (y - cy) * dy)
 
-def capsule(x, y, ends, width):
-    """How far (x, y) is outside a capsule; negative inside."""
-    (ax, ay), (bx, by) = ends
-    dx, dy = bx - ax, by - ay
-    t = clamp(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy))
-    return math.hypot(x - ax - t * dx, y - ay - t * dy) - width / 2
+    return max(disc, behind(start), behind(end))
 
 
 def render(side):
     """Rows of (r, g, b, a), top to bottom, not premultiplied."""
     unit = side / SIDE
     half = SIDE / 2
-    lines = list(rays())
     rows = []
     for row in range(side):
         y = (row + 0.5) / unit
@@ -58,22 +59,18 @@ def render(side):
         for column in range(side):
             x = (column + 0.5) / unit
 
-            def cover(outside):
-                return clamp(0.5 - outside * unit)
+            def cover(distance):
+                return clamp(0.5 - distance * unit)
 
             dx = abs(x - half) - (half - CORNER)
             dy = abs(y - half) - (half - CORNER)
             alpha = cover(math.hypot(max(dx, 0), max(dy, 0)) - CORNER)
-            ink = cover(
-                min([capsule(x, y, DESK, DESK_WIDTH)] + [capsule(x, y, r, RAY_WIDTH) for r in lines])
-            )
-            # A disc with everything below the horizon cut away.
-            ember = cover(max(math.hypot(x - SUN[0], y - SUN[1]) - SUN_RADIUS, y - SUN[1]))
-            rgb = [
-                round(PAPER[i] * (1 - ink - ember) + INK[i] * ink + EMBER[i] * ember)
-                for i in range(3)
-            ]
-            line.append((*rgb, round(255 * alpha)))
+            # The pieces never overlap, so each blends over the tile alone.
+            rgb = list(INK)
+            for piece in PIECES:
+                c = cover(outside(piece, x, y))
+                rgb = [v + (p - v) * c for v, p in zip(rgb, piece[5])]
+            line.append((*(round(v) for v in rgb), round(255 * alpha)))
         rows.append(line)
     return rows
 
