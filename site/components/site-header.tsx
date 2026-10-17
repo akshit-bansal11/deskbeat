@@ -69,7 +69,7 @@ export function SiteHeader({ variant = "landing" }: { variant?: "landing" | "doc
             className="flex min-h-11 items-center gap-2 rounded-lg text-xl font-black tracking-[-0.01em]"
           >
             <Mark className="size-7" />
-            Deskbeat
+            Inlay
             {docs ? (
               <span className="text-dim hidden text-[0.9375rem] font-bold sm:inline">
                 Docs

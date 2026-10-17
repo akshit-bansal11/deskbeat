@@ -1,17 +1,15 @@
 /**
- * The Deskbeat mark, the same drawing as assets/deskbeat-light.svg and -dark.svg: four
- * sound bars whose heights fall away to draw the letter D. Inline, so it follows the
- * theme toggle rather than the OS: the tile is the page's ink, the bars its ground,
- * and the shortest bar the Ember that holds against that tile.
+ * The Inlay mark, the same drawing as assets/inlay.svg: four flat pieces set into one
+ * tile, one for each widget. Its colours are the brand's and do not follow the theme.
  */
 export function Mark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 108 108" aria-hidden className={className}>
-      <rect width="108" height="108" rx="26" fill="var(--ink)" />
-      <rect x="21" y="19" width="13" height="70" rx="6.5" fill="var(--ground)" />
-      <rect x="39" y="22" width="13" height="64" rx="6.5" fill="var(--ground)" />
-      <rect x="57" y="29" width="13" height="50" rx="6.5" fill="var(--ground)" />
-      <rect x="75" y="41" width="13" height="26" rx="6.5" fill="var(--mark-beat)" />
+      <rect width="108" height="108" rx="26" fill="#15151C" />
+      <path d="M20 20A32 32 0 0 1 52 52H20Z" fill="#3355FF" />
+      <circle cx="72" cy="36" r="16" fill="#FF6B2C" />
+      <circle cx="36" cy="72" r="16" fill="#FFC93C" />
+      <path d="M56 88A32 32 0 0 1 88 56V88Z" fill="#F3EFE6" />
     </svg>
   );
 }

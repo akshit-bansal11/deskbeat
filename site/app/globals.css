@@ -5,65 +5,67 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
-  Three colours: Ink #131316, Paper #F5F4F0 and one accent, Ember (#CC3510 on Paper,
-  #FF6B45 on Ink). Light is Paper with Ink text; dark is Ink with Paper text. Every
-  other value is a mix of those three, so nothing here is a fourth colour:
+  Inlay's palette is flat: no gradients anywhere. Ink #15151C, Bone #F3EFE6 and one
+  accent, Orange #FF6B2C. Light is Bone with Ink text; dark is Ink with Bone text. Cobalt
+  #3355FF and Sun #FFC93C belong to the mark alone and are not used on the page.
 
-    card   light: Paper lifted 60% of the way to white; dark: Ink with 6% Paper
-    line   Paper with 10% Ink; Ink with 14% Paper
-    faint  Paper with 5% Ink; Ink with 10% Paper
-    dim    Ink with 36% Paper; Paper with 38% Ink
-    soft   light: white with 8% Ember; dark: Ink with 16% Ember
+  Orange #FF6B2C is the fill in both themes: buttons, the filled badge, step numbers,
+  selection. Ink sits on it (6.4:1); Bone on it would be 2.5:1. As text, #FF6B2C is
+  2.5:1 on Bone, so in light every orange letter, link, icon and focus ring takes
+  --orange-text, a darker orange (#B33A0B). In dark, --orange-text is #FF6B2C itself.
 
-  Ember is kept for primary actions, links, selection and live things.
+  Every other value is a mix of those three, so nothing here is a fourth colour:
 
-  Every text pair used on the site was computed (WCAG 2 relative luminance) at 4.5:1
-  or better:
-    light  ink/ground 16.9  ink/card 17.9  ink/faint 15.3  ink/soft 16.5
-           dim/ground 5.4  dim/card 5.7  dim/faint 4.9  dim/soft 5.3
-           accent/card 5.0  accent/ground 4.7  accent/soft 4.6  on-accent/accent 4.7
-    dark   ink/ground 16.9  ink/card 14.6  ink/faint 13.0  ink/soft 13.5
-           dim/ground 7.0  dim/card 6.1  dim/faint 5.4  dim/soft 5.6
-           accent/card 5.7  accent/ground 6.6  accent/soft 5.3  accent/faint 5.1
-           on-accent/accent 6.6
-  One pair does NOT pass, so never set text in it: accent on faint in light (4.2).
-  Text on a faint fill is ink or dim.
+    card   light: Bone lifted 60% of the way to white; dark: Ink with 6% Bone
+    line   Bone with 10% Ink; Ink with 14% Bone
+    faint  Bone with 5% Ink; Ink with 10% Bone
+    dim    Ink with 36% Bone; Bone with 38% Ink
+    soft   light: white with 10% Orange; dark: Ink with 16% Orange
+
+  Every text pair was computed (WCAG 2 relative luminance) at 4.5:1 or better:
+    light  ink/ground 15.8  ink/card 17.2  ink/faint 14.3  ink/soft 16.4
+           dim/ground 5.2  dim/card 5.7  dim/faint 4.7  dim/soft 5.4
+           orange-text/ground 5.2  /card 5.7  /faint 4.7  /soft 5.4
+           ink on orange 6.4
+    dark   ink/ground 15.8  ink/card 13.8  ink/faint 12.3  ink/soft 12.7
+           dim/ground 6.7  dim/card 5.8  dim/faint 5.2  dim/soft 5.3
+           orange-text/ground 6.4  /card 5.6  /faint 5.0  /soft 5.1
+           ink on orange 6.4
+  Never set text in --orange on a light ground: that is what --orange-text is for.
 
   The shadcn variable names (background, card, primary, muted, border, ring…) are
   mapped onto those values, so a component installed with the shadcn CLI picks them up
-  unchanged. Note that shadcn's `accent` is its hover surface; Ember is `primary`
-  here, and `destructive` is Ember too, because there is no fourth colour.
-
-  --mark-beat is the shortest bar of the logo. The mark's tile is the page's ink, so
-  that bar sits on the opposite ground and takes the opposite theme's Ember.
+  unchanged. `primary` is the Orange fill with Ink on it; orange text is the site's own
+  `primary-text`. Note that shadcn's `accent` is its hover surface, and `destructive` is
+  Orange too, because there is no fourth colour.
 */
 :root {
-  --ground: #f5f4f0;
-  --card: #fbfbf9;
-  --line: #dededa;
-  --faint: #eae9e5;
-  --ink: #131316;
-  --dim: #646464;
-  --ember: #cc3510;
-  --on-ember: #f5f4f0;
-  --ember-soft: #fbefec;
-  --mark-beat: #ff6b45;
-  --elev-card: 0 1px 2px rgb(19 19 22 / 0.05), 0 4px 16px rgb(19 19 22 / 0.05);
-  --elev-lift: 0 12px 40px rgb(19 19 22 / 0.14);
+  --ground: #f3efe6;
+  --card: #faf9f5;
+  --line: #ddd9d2;
+  --faint: #e8e4dc;
+  --ink: #15151c;
+  --dim: #656365;
+  --orange: #ff6b2c;
+  --orange-text: #b33a0b;
+  --on-orange: #15151c;
+  --orange-soft: #fff0ea;
+  --elev-card: 0 1px 2px rgb(21 21 28 / 0.05), 0 4px 16px rgb(21 21 28 / 0.05);
+  --elev-lift: 0 12px 40px rgb(21 21 28 / 0.14);
   color-scheme: light;
 }
 
 .dark {
-  --ground: #131316;
-  --card: #212123;
-  --line: #333335;
-  --faint: #2a2a2c;
-  --ink: #f5f4f0;
-  --dim: #9f9f9d;
-  --ember: #ff6b45;
-  --on-ember: #131316;
-  --ember-soft: #39211e;
-  --mark-beat: #cc3510;
+  --ground: #15151c;
+  --card: #222228;
+  --line: #343438;
+  --faint: #2b2b30;
+  --ink: #f3efe6;
+  --dim: #9f9c99;
+  --orange: #ff6b2c;
+  --orange-text: #ff6b2c;
+  --on-orange: #15151c;
+  --orange-soft: #3a231f;
   --elev-card: 0 1px 2px rgb(0 0 0 / 0.3);
   --elev-lift: 0 12px 40px rgb(0 0 0 / 0.45);
   color-scheme: dark;
@@ -76,18 +78,18 @@
   --card-foreground: var(--ink);
   --popover: var(--card);
   --popover-foreground: var(--ink);
-  --primary: var(--ember);
-  --primary-foreground: var(--on-ember);
-  --secondary: var(--ember-soft);
-  --secondary-foreground: var(--ember);
+  --primary: var(--orange);
+  --primary-foreground: var(--on-orange);
+  --secondary: var(--orange-soft);
+  --secondary-foreground: var(--orange-text);
   --muted: var(--faint);
   --muted-foreground: var(--ink);
   --accent: var(--faint);
   --accent-foreground: var(--ink);
-  --destructive: var(--ember);
+  --destructive: var(--orange);
   --border: var(--line);
   --input: var(--line);
-  --ring: var(--ember);
+  --ring: var(--orange-text);
 }
 
 @theme inline {
@@ -114,7 +116,8 @@
   --color-dim: var(--dim);
   --color-line: var(--line);
   --color-faint: var(--faint);
-  --color-accent-soft: var(--ember-soft);
+  --color-accent-soft: var(--orange-soft);
+  --color-primary-text: var(--orange-text);
 
   --font-sans: var(--font-sans-family), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono-family), ui-monospace, "SFMono-Regular", monospace;
@@ -125,19 +128,6 @@
 
   --shadow-card: var(--elev-card);
   --shadow-lift: var(--elev-lift);
-
-  --animate-shiny-text: shiny-text 8s infinite;
-  @keyframes shiny-text {
-    0%,
-    90%,
-    100% {
-      background-position: calc(-100% - var(--shiny-width)) 0;
-    }
-    30%,
-    60% {
-      background-position: calc(100% + var(--shiny-width)) 0;
-    }
-  }
 }
 
 @layer base {
@@ -169,8 +159,8 @@
   }
 
   ::selection {
-    background: var(--ember);
-    color: var(--on-ember);
+    background: var(--orange);
+    color: var(--on-orange);
   }
 
   /* One focus treatment everywhere: the accent, offset so it clears a filled button. */

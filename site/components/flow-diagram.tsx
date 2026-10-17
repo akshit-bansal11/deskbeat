@@ -72,7 +72,7 @@ export function FlowDiagram() {
       <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
         <Col column={CORE} />
         <div className="flex items-center justify-center gap-2 lg:mt-24 lg:flex-col">
-          <span className="bg-accent-soft text-primary grid size-10 place-items-center rounded-full">
+          <span className="bg-accent-soft text-primary-text grid size-10 place-items-center rounded-full">
             <ArrowLeftRight aria-hidden className="size-4 rotate-90 lg:rotate-0" />
           </span>
         </div>

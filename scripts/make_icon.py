@@ -5,7 +5,7 @@ needs no resource compiler. Run this again only when the mark changes:
 
     python scripts/make_icon.py
 
-The drawing is the one in crates/app/src/tray.rs, at eight sizes. Standard
+The drawing is the one in crates/core/src/mark.rs, at eight sizes. Standard
 library only.
 """
 
@@ -14,10 +14,16 @@ import struct
 import zlib
 from pathlib import Path
 
-# The mark on a 32-unit grid, as in tray.rs and assets/deskbeat-dark.svg.
-PAPER, INK, EMBER = (245, 244, 240), (19, 19, 22), (204, 53, 16)
-BARS = [(7.9, 20.8), (13.4, 19.0), (18.8, 14.8), (24.2, 7.8)]
-BAR_HALF_WIDTH, CORNER = 1.9, 7.7
+# The mark on its 108-unit grid, as in crates/core/src/mark.rs.
+INK = (0x15, 0x15, 0x1C)
+SIDE, CORNER = 108, 26
+# (kind, centre, radius, arc start, arc end, colour). The arcs run clockwise.
+PIECES = [
+    ("quarter", (20, 52), 32, (20, 20), (52, 52), (0x33, 0x55, 0xFF)),
+    ("disc", (72, 36), 16, None, None, (0xFF, 0x6B, 0x2C)),
+    ("disc", (36, 72), 16, None, None, (0xFF, 0xC9, 0x3C)),
+    ("quarter", (88, 88), 32, (56, 88), (88, 56), (0xF3, 0xEF, 0xE6)),
+]
 SIZES = [16, 20, 24, 32, 40, 48, 64, 256]
 
 RT_ICON, RT_GROUP_ICON = 3, 14
@@ -28,34 +34,43 @@ def clamp(v):
     return max(0.0, min(1.0, v))
 
 
+def outside(piece, x, y):
+    """How far (x, y) is outside a piece, in units; negative inside."""
+    kind, (cx, cy), radius, start, end, _ = piece
+    disc = math.hypot(x - cx, y - cy) - radius
+    if kind == "disc":
+        return disc
+
+    def behind(point):
+        dx, dy = (point[0] - cx) / radius, (point[1] - cy) / radius
+        return -((x - cx) * dx + (y - cy) * dy)
+
+    return max(disc, behind(start), behind(end))
+
+
 def render(side):
     """Rows of (r, g, b, a), top to bottom, not premultiplied."""
-    unit = side / 32
-    middle = side / 2
+    unit = side / SIDE
+    half = SIDE / 2
     rows = []
     for row in range(side):
-        y = row + 0.5
+        y = (row + 0.5) / unit
         line = []
         for column in range(side):
-            x = column + 0.5
-            dx = abs(x - middle) - (middle - CORNER * unit)
-            dy = abs(y - middle) - (middle - CORNER * unit)
-            outside = math.hypot(max(dx, 0), max(dy, 0)) - CORNER * unit
-            alpha = clamp(0.5 - outside)
+            x = (column + 0.5) / unit
 
-            def cover(bar):
-                centre, height = bar[0] * unit, bar[1] * unit
-                half = BAR_HALF_WIDTH * unit
-                along = max(abs(y - middle) - (height / 2 - half), 0)
-                return clamp(0.5 - (math.hypot(x - centre, along) - half))
+            def cover(distance):
+                return clamp(0.5 - distance * unit)
 
-            ink = max(cover(bar) for bar in BARS[:3])
-            ember = cover(BARS[3])
-            rgb = [
-                round(PAPER[i] * (1 - ink - ember) + INK[i] * ink + EMBER[i] * ember)
-                for i in range(3)
-            ]
-            line.append((*rgb, round(255 * alpha)))
+            dx = abs(x - half) - (half - CORNER)
+            dy = abs(y - half) - (half - CORNER)
+            alpha = cover(math.hypot(max(dx, 0), max(dy, 0)) - CORNER)
+            # The pieces never overlap, so each blends over the tile alone.
+            rgb = list(INK)
+            for piece in PIECES:
+                c = cover(outside(piece, x, y))
+                rgb = [v + (p - v) * c for v, p in zip(rgb, piece[5])]
+            line.append((*(round(v) for v in rgb), round(255 * alpha)))
         rows.append(line)
     return rows
 

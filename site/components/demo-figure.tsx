@@ -1,5 +1,4 @@
 import Image from "next/image";
-import { BorderBeam } from "@/components/ui/border-beam";
 
 const WIDTH = 880;
 const HEIGHT = 470;
@@ -31,16 +30,9 @@ export function DemoFigure() {
           height={HEIGHT}
           className="hidden h-auto w-full motion-reduce:block"
         />
-        <BorderBeam
-          size={140}
-          duration={9}
-          borderWidth={2}
-          colorFrom="var(--ember)"
-          colorTo="var(--ember-soft)"
-        />
       </div>
       <figcaption className="text-dim mt-3 text-sm">
-        Deskbeat on a real desktop, with Spotify playing.
+        Inlay on a real desktop, with Spotify playing.
       </figcaption>
     </figure>
   );

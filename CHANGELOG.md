@@ -9,6 +9,18 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - The website moved to https://deskbeat.akshitbansal.dev.
+- **Deskbeat is now Inlay.** The exe is `inlay.exe`, released as
+  `Inlay-<version>.exe`. The settings, fonts and lyrics cache move from
+  `%APPDATA%\deskbeat` and `%LOCALAPPDATA%\deskbeat` (or the older
+  `sonic-veil` folders) to `inlay` the first time it runs, and the
+  start-with-Windows entry is renamed with them. The log is now `inlay.log`.
+- A new mark: four flat pieces set into one tile, one for each widget, in a
+  new palette of ink, bone, orange, cobalt and sun. The tray icon, the exe's
+  icon, the tray menu, the settings panel, the README, the website and the
+  social preview all use it. Its geometry lives in one place,
+  `crates/core/src/mark.rs`.
+- The README, the website and the other documents are rewritten to describe
+  Inlay as a desktop widget app rather than a Spotify add-on.
 
 ## [1.4.0] - 2026-10-10
 

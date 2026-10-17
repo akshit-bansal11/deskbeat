@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- The Deskbeat mark: four sound bars, centred like a waveform, whose heights fall away to draw the letter D. For light pages: an Ink tile, Paper bars, and the shortest bar in Ember. Flat colours, no gradient. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
-  <rect width="108" height="108" rx="26" fill="#131316"/>
-  <rect x="21" y="19" width="13" height="70" rx="6.5" fill="#F5F4F0"/>
-  <rect x="39" y="22" width="13" height="64" rx="6.5" fill="#F5F4F0"/>
-  <rect x="57" y="29" width="13" height="50" rx="6.5" fill="#F5F4F0"/>
-  <rect x="75" y="41" width="13" height="26" rx="6.5" fill="#FF6B45"/>
-</svg>

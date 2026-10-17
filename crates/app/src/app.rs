@@ -10,10 +10,10 @@ use std::process::Command;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
-use deskbeat_core::color::{Rgba, parse_hex};
-use deskbeat_core::config::{Config, Layer};
-use deskbeat_core::lrclib::Query;
-use deskbeat_core::timefmt::LocalTime;
+use inlay_core::color::{Rgba, parse_hex};
+use inlay_core::config::{Config, Layer};
+use inlay_core::lrclib::Query;
+use inlay_core::timefmt::LocalTime;
 use windows::Win32::Foundation::{
     ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, RECT, WAIT_OBJECT_0,
 };
@@ -39,7 +39,7 @@ use crate::capture::{self, Audio};
 use crate::gfx::{Gfx, Surface};
 use crate::lyrics::{self, Lyrics, LyricsState};
 use crate::media::{self, Cmd, MediaState};
-use crate::menu::{EMBER, Menu, Pick};
+use crate::menu::{Menu, ORANGE, Pick};
 use crate::settings::{Panel, Status};
 use crate::tray::Tray;
 use crate::widgets::{Action, Ctx, Kind, Part, Wake, Widget};
@@ -75,10 +75,10 @@ const DESKTOP_RECHECK_MS: f64 = 250.0;
 const FIT_PAD: f32 = 14.0;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-const RUN_VALUE: &str = "Deskbeat";
+const RUN_VALUE: &str = "Inlay";
 const REPO_URL: &str = "https://github.com/akshit-bansal11/deskbeat";
-/// The start-with-Windows entry under the app's previous name.
-const OLD_RUN_VALUE: &str = "SonicVeil";
+/// The start-with-Windows entries under the app's earlier names.
+const OLD_RUN_VALUES: [&str; 2] = ["Deskbeat", "SonicVeil"];
 
 /// Colours parsed from the config once, not on every frame.
 pub struct Palette {
@@ -254,7 +254,7 @@ fn set_autostart(on: bool) {
 pub fn run() -> Result<()> {
     unsafe {
         // A second launch must not exit silently: it asks the first to show itself.
-        let _instance = CreateMutexW(None, false, w!("Local\\Deskbeat.Instance"))?;
+        let _instance = CreateMutexW(None, false, w!("Local\\Inlay.Instance"))?;
         if GetLastError() == ERROR_ALREADY_EXISTS {
             if let Ok(existing) = FindWindowW(window::CLASS, window::MAIN_TITLE) {
                 window::post(existing, window::WM_APP_SHOW_SETTINGS);
@@ -264,10 +264,12 @@ pub fn run() -> Result<()> {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
-    // The old entry starts an exe that is no longer the app.
-    if reg(&["query", RUN_KEY, "/v", OLD_RUN_VALUE]) {
-        reg(&["delete", RUN_KEY, "/v", OLD_RUN_VALUE, "/f"]);
-        set_autostart(true);
+    // An old entry starts an exe that is no longer the app.
+    for old in OLD_RUN_VALUES {
+        if reg(&["query", RUN_KEY, "/v", old]) {
+            reg(&["delete", RUN_KEY, "/v", old, "/f"]);
+            set_autostart(true);
+        }
     }
 
     window::register()?;
@@ -622,7 +624,7 @@ impl App {
             autostart: self.autostart,
             scale: self.scale,
         };
-        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.ui_scale, EMBER, status, area);
+        let drawn = panel.draw(&mut self.gfx, &mut cfg, self.ui_scale, ORANGE, status, area);
         let outcome = match drawn {
             Ok(outcome) => outcome,
             Err(error) => {

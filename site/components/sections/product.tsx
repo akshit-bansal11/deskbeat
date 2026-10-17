@@ -14,6 +14,10 @@ import { LATEST_RELEASE, REPO } from "@/lib/nav";
 
 const WIDGETS: { title: string; body: string }[] = [
   {
+    title: "Clock",
+    body: "Day, time and date. It works on its own, with or without Spotify.",
+  },
+  {
     title: "Visualizer",
     body: "A spectrum of Spotify's audio only, not your games or calls. Bars, mirrored bars or a wave.",
   },
@@ -25,7 +29,6 @@ const WIDGETS: { title: string; body: string }[] = [
     title: "Player",
     body: "Album art, title, artist, a progress bar you can click to seek, and previous, play/pause and next.",
   },
-  { title: "Clock", body: "Day, time and date." },
 ];
 
 // Ctrl+Alt plus the key, from HOTKEYS in crates/app/src/app.rs. The lyric nudge is
@@ -202,18 +205,19 @@ export function ProductSections() {
       <Section
         id="overview"
         eyebrow="Start here"
-        title="What Deskbeat is"
+        title="What Inlay is"
         lede={
           <>
-            Desktop widgets for Spotify on Windows 11, in one small native app: a
-            spectrum visualizer, synced lyrics, a clock, and a now-playing player.
+            Live widgets, set into your Windows 11 desktop, in one small native app: a
+            clock, a spectrum visualizer, time-synced lyrics and a now-playing player.
           </>
         }
       >
         <P>
-          It is built as a light alternative to a Rainmeter setup. Widgets redraw only
-          when something changes, and nothing is drawn at all while Spotify is silent or
-          a window covers the desktop.
+          It is built as a light alternative to a Rainmeter setup. The widgets are drawn
+          on the desktop itself, behind its icons, and redraw only when something on
+          them changes: the visualizer runs only while there is sound, and nothing is
+          drawn at all while a window covers the desktop.
         </P>
         <P>
           It is not a skin engine. There are no plugins, no scripts and no user-authored
@@ -221,8 +225,10 @@ export function ProductSections() {
           instead.
         </P>
         <P>
-          There is no Spotify login and no client ID: track details and controls come
-          from Windows itself, so it works on free accounts.
+          The clock works on its own. The visualizer, the lyrics and the player follow
+          whatever Spotify plays. There is no Spotify login and no client ID: track
+          details and controls come from Windows itself, so it works on free accounts,
+          and the visualizer captures Spotify&apos;s audio alone.
         </P>
 
         <Sub>What you get</Sub>
@@ -240,9 +246,12 @@ export function ProductSections() {
           ))}
         </div>
 
-        <Note label="Formerly Sonic Veil">
-          Settings, fonts, the lyrics cache and the start-with-Windows entry from that
-          name are carried over the first time <C>deskbeat.exe</C> runs.
+        <Note label="Formerly Deskbeat, and before that Sonic Veil">
+          Settings, fonts and the lyrics cache kept under either earlier name, in the{" "}
+          <C>deskbeat</C> or <C>sonic-veil</C> folder of <C>%APPDATA%</C> and{" "}
+          <C>%LOCALAPPDATA%</C>, are moved over the first time <C>inlay.exe</C> runs. An
+          old <C>Deskbeat</C> or <C>SonicVeil</C> start-with-Windows entry is replaced
+          by one named <C>Inlay</C>.
         </Note>
       </Section>
 
@@ -252,7 +261,7 @@ export function ProductSections() {
         title="Download and install"
         lede={
           <>
-            Download <C>Deskbeat-&lt;version&gt;.exe</C> from the{" "}
+            Download <C>Inlay-&lt;version&gt;.exe</C> from the{" "}
             <ExternalLink href={LATEST_RELEASE}>latest GitHub release</ExternalLink> and
             run it. There is no installer.
           </>
@@ -261,7 +270,7 @@ export function ProductSections() {
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="solid">Windows 11</Badge>
           <Badge variant="outline">The Spotify desktop app</Badge>
-          <Badge variant="outline">Deskbeat-x.y.z.exe</Badge>
+          <Badge variant="outline">Inlay-x.y.z.exe</Badge>
         </div>
         <ol className="text-dim max-w-[68ch] list-decimal space-y-3 pl-5 text-[0.9375rem] leading-relaxed">
           <li>
@@ -278,7 +287,8 @@ export function ProductSections() {
             right-click it for a small menu.
           </li>
           <li>
-            Play something in the Spotify desktop app on the same PC. Playback sent to
+            The clock shows at once. For the visualizer, the lyrics and the player, play
+            something in the Spotify desktop app on the same PC. Playback sent to
             another device through Spotify Connect is not seen.
           </li>
         </ol>
@@ -291,7 +301,7 @@ export function ProductSections() {
         </P>
         <CodeBlock
           title="Verify the attestation"
-          code="gh attestation verify Deskbeat-<version>.exe --repo akshit-bansal11/deskbeat"
+          code="gh attestation verify Inlay-<version>.exe --repo akshit-bansal11/deskbeat"
         />
       </Section>
 
@@ -301,8 +311,8 @@ export function ProductSections() {
         title="Using it"
         lede={
           <>
-            Deskbeat lives in the notification area. Double-click its icon for settings,
-            or right-click it for a small menu.
+            Inlay lives in the notification area. Double-click its icon for settings, or
+            right-click it for a small menu.
           </>
         }
       >
@@ -347,7 +357,7 @@ export function ProductSections() {
         <P>
           By default the player, the lyrics and the visualizer hide while Spotify is not
           running, and drawing stops while a fullscreen app or game is in front. Both
-          are settings. Only one copy of Deskbeat runs at a time: a second launch hands
+          are settings. Only one copy of Inlay runs at a time: a second launch hands
           over to the first and exits.
         </P>
       </Section>
@@ -441,7 +451,7 @@ export function ProductSections() {
         <Sub>Fonts</Sub>
         <P>
           To use a font without installing it in Windows, put its <C>.ttf</C> or{" "}
-          <C>.otf</C> file in <C>%APPDATA%\deskbeat\fonts</C> and restart the app. The
+          <C>.otf</C> file in <C>%APPDATA%\inlay\fonts</C> and restart the app. The
           clock&apos;s day and time default to Anurati and Quicksand, the pairing the
           Mond Rainmeter skin uses; they are not shipped with the app, and the theme
           font is used until they are in that folder.
@@ -459,10 +469,7 @@ export function ProductSections() {
           </>
         }
       >
-        <CodeBlock
-          title="The settings file"
-          code={"%APPDATA%\\deskbeat\\config.toml"}
-        />
+        <CodeBlock title="The settings file" code={"%APPDATA%\\inlay\\config.toml"} />
         <P>
           Loading lays the file over the default config table by table, so a partial
           file keeps every default it does not mention, and unknown keys are ignored.
@@ -595,8 +602,8 @@ bars = 96`}
           </TableBody>
         </Table>
         <P>
-          A hotkey that another app has already taken is left to that app; Deskbeat
-          writes a line to its log and carries on. The switch is{" "}
+          A hotkey that another app has already taken is left to that app; Inlay writes
+          a line to its log and carries on. The switch is{" "}
           <strong>Global hotkeys</strong> on the General tab, or <C>hotkeys = false</C>{" "}
           under <C>[general]</C>.
         </P>
@@ -607,14 +614,12 @@ bars = 96`}
         eyebrow="Start here"
         title="If a widget stays empty"
         lede={
-          <>
-            Deskbeat has no console, so its diagnostics write to a file. In a terminal:
-          </>
+          <>Inlay has no console, so its diagnostics write to a file. In a terminal:</>
         }
       >
         <CodeBlock
           title="Record what Windows reports"
-          code="Deskbeat-1.0.1.exe --probe > probe.txt"
+          code="Inlay-<version>.exe --probe > probe.txt"
           caption="With Spotify playing, this records for eight seconds what Windows reports about the track and how loud Spotify's audio is."
         />
         <ul className="text-dim max-w-[68ch] list-disc space-y-2 pl-5 text-[0.9375rem] leading-relaxed">
@@ -628,8 +633,8 @@ bars = 96`}
           </li>
         </ul>
         <P>
-          Errors are logged to <C>%LOCALAPPDATA%\deskbeat\deskbeat.log</C>. The lyrics
-          cache is in the same folder and is safe to delete.
+          Errors are logged to <C>%LOCALAPPDATA%\inlay\inlay.log</C>. The lyrics cache
+          is in the same folder and is safe to delete.
         </P>
         <P>
           If word-by-word lyrics stop while line-by-line ones still work, the

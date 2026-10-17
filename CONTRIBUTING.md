@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for looking. Deskbeat is small on purpose; the bar for a change is that it makes the product better for someone using it, and that it passes the same gate CI runs.
+Thanks for looking. Inlay is small on purpose; the bar for a change is that it makes the product better for someone using it, and that it passes the same gate CI runs.
 
 ## Before you start
 
@@ -12,8 +12,8 @@ Thanks for looking. Deskbeat is small on purpose; the bar for a change is that i
 Fork the repository on GitHub and clone your fork. Your work lives on your fork, and reaches this repository as a pull request.
 
 ```powershell
-git clone https://github.com/<you>/deskbeat.git
-cd deskbeat
+git clone https://github.com/<you>/deskbeat.git inlay
+cd inlay
 git remote add upstream https://github.com/akshit-bansal11/deskbeat.git
 ```
 

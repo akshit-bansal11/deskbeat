@@ -1,6 +1,6 @@
 ## What
 
-<!-- One or two sentences: what changes for someone using Deskbeat. -->
+<!-- One or two sentences: what changes for someone using Inlay. -->
 
 ## Why
 

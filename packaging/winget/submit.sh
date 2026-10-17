@@ -9,7 +9,7 @@ set -euo pipefail
 
 version=${1:?usage: submit.sh <version>}
 dir="$(dirname "$0")/$version"
-id=AkshitBansal.Deskbeat
+id=AkshitBansal.Inlay
 title="New package: $id version $version"
 branch="$id-$version"
 
@@ -27,7 +27,7 @@ base=$(gh api "repos/$fork/git/ref/heads/master" --jq .object.sha)
 gh api "repos/$fork/git/refs" -f ref="refs/heads/$branch" -f sha="$base" --silent
 
 for file in "$dir"/*.yaml; do
-  gh api -X PUT "repos/$fork/contents/manifests/a/AkshitBansal/Deskbeat/$version/$(basename "$file")" \
+  gh api -X PUT "repos/$fork/contents/manifests/a/AkshitBansal/Inlay/$version/$(basename "$file")" \
     -f message="$title" -f branch="$branch" -f content="$(base64 -w0 "$file")" --silent
 done
 

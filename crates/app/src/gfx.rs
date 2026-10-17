@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use deskbeat_core::color::Rgba;
-use deskbeat_core::config::Align;
+use inlay_core::color::Rgba;
+use inlay_core::config::Align;
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND};
 use windows::Win32::Graphics::Direct2D::Common::*;
 use windows::Win32::Graphics::Direct2D::*;
@@ -483,6 +483,38 @@ impl Gfx {
             radiusY: radius,
         };
         unsafe { self.rt.FillEllipse(&ellipse, self.solid(c)) };
+    }
+
+    /// A quarter of a disc: straight from `centre` to `from`, clockwise
+    /// round the arc to `to`, and straight back.
+    pub fn fill_quarter(
+        &self,
+        centre: (f32, f32),
+        from: (f32, f32),
+        to: (f32, f32),
+        radius: f32,
+        c: Rgba,
+    ) -> Result<()> {
+        unsafe {
+            let geometry = self.factory.CreatePathGeometry()?;
+            let sink = geometry.Open()?;
+            sink.BeginFigure(point(centre.0, centre.1), D2D1_FIGURE_BEGIN_FILLED);
+            sink.AddLine(point(from.0, from.1));
+            sink.AddArc(&D2D1_ARC_SEGMENT {
+                point: point(to.0, to.1),
+                size: D2D_SIZE_F {
+                    width: radius,
+                    height: radius,
+                },
+                rotationAngle: 0.0,
+                sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                arcSize: D2D1_ARC_SIZE_SMALL,
+            });
+            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+            sink.Close()?;
+            self.rt.FillGeometry(&geometry, self.solid(c), None);
+        }
+        Ok(())
     }
 
     /// A horizontal gradient across `[x0, x1]`.

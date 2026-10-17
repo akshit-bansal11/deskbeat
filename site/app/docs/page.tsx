@@ -8,9 +8,9 @@ import { SiteHeader } from "@/components/site-header";
 import { Toc } from "@/components/toc";
 import { SOCIAL_IMAGE } from "@/lib/nav";
 
-const TITLE = "Deskbeat — documentation";
+const TITLE = "Inlay — documentation";
 const DESCRIPTION =
-  "Full Deskbeat documentation: install, the four widgets, edit layout, settings and config.toml, hotkeys, lyrics sources, architecture, privacy, and the developer guide, on one page.";
+  "Full Inlay documentation: install, the four widgets, edit layout, settings and config.toml, hotkeys, lyrics sources, architecture, privacy, and the developer guide, on one page.";
 
 // A page's openGraph replaces the layout's whole object rather than merging into it,
 // hence type, site name and image again here.
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     type: "website",
     url: "/docs",
-    siteName: "Deskbeat",
+    siteName: "Inlay",
     images: [SOCIAL_IMAGE],
   },
 };
@@ -37,9 +37,11 @@ export default function DocsPage() {
         {/* No entrance on the title block: it is the first paint, and a fade would
             hide it until the JavaScript arrives. */}
         <div className="py-10 md:py-16">
-          <p className="text-primary mb-2 text-[0.9375rem] font-bold">Documentation</p>
+          <p className="text-primary-text mb-2 text-[0.9375rem] font-bold">
+            Documentation
+          </p>
           <h1 className="max-w-[20ch] text-[2.5rem] leading-[1.04] font-black tracking-[-0.025em] md:text-6xl">
-            Everything Deskbeat does, and how.
+            Everything Inlay does, and how.
           </h1>
           <p className="text-dim mt-5 max-w-[64ch] text-base leading-relaxed md:text-lg">
             Install, the widgets, edit layout, settings and the file behind them,

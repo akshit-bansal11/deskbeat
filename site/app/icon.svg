@@ -1,19 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
-  <title>Deskbeat</title>
-  <!-- The Deskbeat mark. One file for both browser themes: an Ink tile on a light tab strip, a Paper tile on a dark one. -->
-  <style>
-    .tile { fill: #131316; }
-    .bar { fill: #F5F4F0; }
-    .beat { fill: #FF6B45; }
-    @media (prefers-color-scheme: dark) {
-      .tile { fill: #F5F4F0; }
-      .bar { fill: #131316; }
-      .beat { fill: #CC3510; }
-    }
-  </style>
-  <rect class="tile" width="108" height="108" rx="26"/>
-  <rect class="bar" x="21" y="19" width="13" height="70" rx="6.5"/>
-  <rect class="bar" x="39" y="22" width="13" height="64" rx="6.5"/>
-  <rect class="bar" x="57" y="29" width="13" height="50" rx="6.5"/>
-  <rect class="beat" x="75" y="41" width="13" height="26" rx="6.5"/>
+  <title>Inlay</title>
+  <!-- The Inlay mark, the same drawing as assets/inlay.svg. One tile for both browser themes. -->
+  <rect width="108" height="108" rx="26" fill="#15151C"/>
+  <path d="M20 20A32 32 0 0 1 52 52H20Z" fill="#3355FF"/>
+  <circle cx="72" cy="36" r="16" fill="#FF6B2C"/>
+  <circle cx="36" cy="72" r="16" fill="#FFC93C"/>
+  <path d="M56 88A32 32 0 0 1 88 56V88Z" fill="#F3EFE6"/>
 </svg>

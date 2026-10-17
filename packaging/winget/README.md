@@ -1,8 +1,12 @@
 # winget
 
-The manifest that puts Deskbeat in the Windows Package Manager as `AkshitBansal.Deskbeat`. It is a `portable` package: winget downloads the release's exe as it is, puts a `deskbeat` command on the PATH, and replaces the file on `winget upgrade`.
+The manifest that puts Inlay in the Windows Package Manager as `AkshitBansal.Inlay`. It is a `portable` package: winget downloads the release's exe as it is, puts an `inlay` command on the PATH, and replaces the file on `winget upgrade`.
 
 The files here are a record of what is to be submitted. winget does not read them from this repository; a package exists once a pull request adding them is merged into [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs). Submitting is the maintainer's to do, because the pull request is opened from his account.
+
+## The rename
+
+Versions 1.0.0 to 1.4.0 were published as `AkshitBansal.Deskbeat`, and their folders here keep that name as a record. From the first release named Inlay, the folder holds `AkshitBansal.Inlay.*` files with `PackageName: Inlay`, and `submit.sh` submits it as a new package. Once it is in, the old package can be retired by a pull request to winget-pkgs that removes `AkshitBansal.Deskbeat`.
 
 ## Submitting
 
@@ -25,4 +29,4 @@ None of this has been through Microsoft's checks, and `winget validate` has not 
 
 - **Whether an unsigned exe passes.** The exe is not code-signed, and the validation run includes a malware scan and a SmartScreen check.
 - **Whether Start with Windows survives an upgrade.** The app writes its own path into the Run key. If winget keeps the versioned file name, the path changes with each release and the switch needs turning on again.
-- **Whether `winget upgrade` can replace the exe while the tray app is running.** Quit Deskbeat first if it cannot.
+- **Whether `winget upgrade` can replace the exe while the tray app is running.** Quit Inlay first if it cannot.

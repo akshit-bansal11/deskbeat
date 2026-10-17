@@ -23,7 +23,7 @@ const mono = JetBrains_Mono({
   display: "swap",
 });
 
-const TITLE = "Deskbeat — desktop widgets for Spotify on Windows 11";
+const TITLE = "Inlay — live widgets, set into your Windows desktop";
 
 export const metadata: Metadata = {
   // Every relative URL in metadata (Open Graph, canonical) resolves against this.
@@ -32,16 +32,16 @@ export const metadata: Metadata = {
   // canonical link is each page's own, so a future page never inherits "/" by accident.
   title: TITLE,
   description:
-    "Deskbeat draws a spectrum visualizer, synced lyrics, a clock and a now-playing player on the Windows 11 desktop, in one small native app. No Spotify login, no telemetry. MIT.",
-  applicationName: "Deskbeat",
+    "Inlay sets four live widgets into the Windows 11 desktop: a clock, and a spectrum visualizer, time-synced lyrics and a now-playing player that follow Spotify. One small native app, a light alternative to Rainmeter. No Spotify login, no telemetry. MIT.",
+  applicationName: "Inlay",
   authors: [{ name: "akshit-bansal11" }],
   openGraph: {
     title: TITLE,
     description:
-      "A spectrum visualizer, synced lyrics, a clock and a now-playing player, drawn on the desktop by one native app. No Spotify login.",
+      "A clock, a spectrum visualizer, synced lyrics and a now-playing player, set into the Windows 11 desktop by one native app. They redraw only when something changes. No Spotify login.",
     type: "website",
     url: "/",
-    siteName: "Deskbeat",
+    siteName: "Inlay",
     images: [SOCIAL_IMAGE],
   },
   twitter: {
@@ -52,8 +52,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f4f0" },
-    { media: "(prefers-color-scheme: dark)", color: "#131316" },
+    { media: "(prefers-color-scheme: light)", color: "#f3efe6" },
+    { media: "(prefers-color-scheme: dark)", color: "#15151c" },
   ],
 };
 

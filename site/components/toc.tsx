@@ -51,7 +51,7 @@ export function Toc() {
                     className={cn(
                       "flex min-h-11 items-center rounded-xl px-3 text-[0.9375rem] transition-colors",
                       current
-                        ? "bg-accent-soft text-primary font-bold"
+                        ? "bg-accent-soft text-primary-text font-bold"
                         : "text-foreground hover:bg-faint",
                     )}
                   >

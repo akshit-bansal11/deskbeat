@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag such as v1.0.1 to publish. The quality gate passes, then the exe is attached to a GitHub
-# Release named for the version, Deskbeat-1.0.1.exe, so several downloads on one PC can be told apart.
+# Release named for the version, Inlay-1.0.1.exe, so several downloads on one PC can be told apart.
 #
 # Running this by hand instead builds the same file from whatever the branch currently holds and attaches
 # it to a DRAFT release. A draft is visible only to accounts with push access to the repo, and GitHub does
@@ -56,7 +56,7 @@ jobs:
         shell: pwsh
         run: |
           $crate = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
-            Where-Object name -eq 'deskbeat' | Select-Object -ExpandProperty version
+            Where-Object name -eq 'inlay' | Select-Object -ExpandProperty version
           if ($env:GITHUB_EVENT_NAME -eq 'push') {
             $tag = $env:GITHUB_REF_NAME.TrimStart('v')
             if ($tag -ne $crate) { throw "tag $tag does not match crate version $crate" }
@@ -70,7 +70,7 @@ jobs:
       - name: Render snapshots
         shell: pwsh
         run: |
-          $run = Start-Process -FilePath target/release/deskbeat.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
+          $run = Start-Process -FilePath target/release/inlay.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
           if ($run.ExitCode -ne 0) { throw "snapshot exited with $($run.ExitCode)" }
 
       # The sums are taken after the rename, so SHA256SUMS.txt names the file exactly as it is downloaded.
@@ -78,7 +78,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target/release/deskbeat.exe "dist/Deskbeat-$env:VERSION.exe"
+          Copy-Item target/release/inlay.exe "dist/Inlay-$env:VERSION.exe"
           # LF endings: with CRLF, `sha256sum -c` reads the carriage return as
           # part of the file name and reports the file missing.
           $sums = Get-ChildItem dist -Filter *.exe | ForEach-Object {
@@ -93,7 +93,7 @@ jobs:
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
-          subject-path: 'dist/Deskbeat-*.exe'
+          subject-path: 'dist/Inlay-*.exe'
 
       # A tagged run takes that version's section of CHANGELOG.md; a hand-run draft takes Unreleased,
       # because a draft is a build of work in progress and has no section of its own yet.
@@ -116,7 +116,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create $env:GITHUB_REF_NAME "dist/Deskbeat-$env:VERSION.exe" dist/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --title "Deskbeat $env:GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+          gh release create $env:GITHUB_REF_NAME "dist/Inlay-$env:VERSION.exe" dist/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --title "Inlay $env:GITHUB_REF_NAME" --notes-file notes.md --verify-tag
           if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 
       # --draft is what keeps this private, and the run number is what keeps two test builds from
@@ -129,7 +129,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NAME: ${{ inputs.label }}-${{ github.run_number }}
         run: |
-          gh release create $env:NAME "dist/Deskbeat-$env:VERSION.exe" dist/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --title "Deskbeat $env:NAME" --notes-file notes.md --draft --target $env:GITHUB_SHA
+          gh release create $env:NAME "dist/Inlay-$env:VERSION.exe" dist/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --title "Inlay $env:NAME" --notes-file notes.md --draft --target $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
           @(
             "Draft build **$env:NAME**, visible only to accounts with push access to this repo."

@@ -41,7 +41,7 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
           className="grid place-items-center"
         >
           {copied ? (
-            <Check aria-hidden className="text-primary size-4" />
+            <Check aria-hidden className="text-primary-text size-4" />
           ) : (
             <Copy aria-hidden className="size-4" />
           )}

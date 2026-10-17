@@ -1,9 +1,9 @@
 //! Now playing: art, title, artist, transport buttons and progress. Each is
 //! placed, sized and styled on its own, wherever the config puts it.
 
-use deskbeat_core::color::{Rgba, with_alpha};
-use deskbeat_core::config::{Align, Label, PlayerBackground, PlayerPart};
-use deskbeat_core::lrclib::short_title;
+use inlay_core::color::{Rgba, with_alpha};
+use inlay_core::config::{Align, Label, PlayerBackground, PlayerPart};
+use inlay_core::lrclib::short_title;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::ID2D1Bitmap;
 use windows::core::Result;

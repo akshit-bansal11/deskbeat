@@ -49,17 +49,17 @@ jobs:
       - name: Render snapshots
         shell: pwsh
         run: |
-          $run = Start-Process -FilePath target/release/deskbeat.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
+          $run = Start-Process -FilePath target/release/inlay.exe -ArgumentList '--snapshot', 'snapshots' -Wait -PassThru -NoNewWindow
           if ($run.ExitCode -ne 0) {
-            Get-Content "$env:LOCALAPPDATA/deskbeat/deskbeat.log" -ErrorAction SilentlyContinue
+            Get-Content "$env:LOCALAPPDATA/inlay/inlay.log" -ErrorAction SilentlyContinue
             throw "snapshot exited with $($run.ExitCode)"
           }
           Get-ChildItem snapshots
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: deskbeat-windows-x64
+          name: inlay-windows-x64
           retention-days: 14
           if-no-files-found: error
           path: |
-            target/release/deskbeat.exe
+            target/release/inlay.exe
             snapshots/*.png

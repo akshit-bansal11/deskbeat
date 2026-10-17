@@ -1,6 +1,6 @@
 [package]
-name = "deskbeat"
-description = "Desktop widgets for Spotify on Windows 11."
+name = "inlay"
+description = "Live widgets set into your Windows 11 desktop: a clock, a music visualizer, synced lyrics and a player."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-deskbeat-core.workspace = true
+inlay-core.workspace = true
 rustfft.workspace = true
 serde_json.workspace = true
 # The `implement` macro expands to paths under `::windows_core`.
