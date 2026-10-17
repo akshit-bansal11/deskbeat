@@ -20,7 +20,7 @@ const DECISIONS: { id: string; question: string; answer: string }[] = [
     id: "gsmtc",
     question: "Why the Windows media session and not the Spotify Web API?",
     answer:
-      "The media session needs no Spotify Web API, no client ID and no OAuth, so Deskbeat works on free accounts and needs no setup. Track, position, art and transport all come from it, filtered to Spotify's session.",
+      "The media session needs no Spotify Web API, no client ID and no OAuth, so Inlay works on free accounts and needs no setup. Track, position, art and transport all come from it, filtered to Spotify's session.",
   },
   {
     id: "loopback",
@@ -65,7 +65,7 @@ const KIND_VARIANT: Record<Kind, "solid" | "outline"> = {
 const LIMITS: { kind: Kind; text: string }[] = [
   {
     kind: "accepted",
-    text: "It needs Windows 11 and the Spotify desktop app playing on the same PC. Playback sent to another device through Spotify Connect is not seen.",
+    text: "It needs Windows 11. The visualizer, lyrics and player need the Spotify desktop app playing on the same PC; playback sent to another device through Spotify Connect is not seen.",
   },
   {
     kind: "accepted",
@@ -89,7 +89,10 @@ const LIMITS: { kind: Kind; text: string }[] = [
   },
   { kind: "unverified", text: "The transport buttons and seeking." },
   { kind: "unverified", text: "Staying visible through Show Desktop (Win+D)." },
-  { kind: "unverified", text: "Settings carrying over from the Sonic Veil name." },
+  {
+    kind: "unverified",
+    text: "Settings carrying over from the Deskbeat and Sonic Veil names.",
+  },
 ];
 
 const TESTED: string[] = [
@@ -163,7 +166,7 @@ export function ReferenceSections() {
         title="Known limits"
         lede={
           <>
-            What Deskbeat does not do, and what has been checked only by automated tests
+            What Inlay does not do, and what has been checked only by automated tests
             and rendered snapshots, not by hand.
           </>
         }
@@ -182,11 +185,10 @@ export function ReferenceSections() {
           ))}
         </ul>
         <Note label="What the two labels mean">
-          <strong className="text-foreground">accepted</strong> is a cost of how
-          Deskbeat is built today.{" "}
-          <strong className="text-foreground">unverified</strong> is covered by
-          automated tests and rendered snapshots but has not been checked by hand on a
-          real desktop.
+          <strong className="text-foreground">accepted</strong> is a cost of how Inlay
+          is built today. <strong className="text-foreground">unverified</strong> is
+          covered by automated tests and rendered snapshots but has not been checked by
+          hand on a real desktop.
         </Note>
 
         <Sub>Tested on a real Windows 11 desktop</Sub>
@@ -248,16 +250,16 @@ export function ReferenceSections() {
           </li>
           <li>
             The clock&apos;s default pairing, Anurati and Quicksand, follows the Mond
-            Rainmeter skin. Neither font is distributed with Deskbeat.
+            Rainmeter skin. Neither font is distributed with Inlay.
           </li>
           <li>
-            Spotify is a trademark of Spotify AB. Deskbeat is not affiliated with or
+            Spotify is a trademark of Spotify AB. Inlay is not affiliated with or
             endorsed by Spotify; it reads what Windows reports about the app that is
             playing.
           </li>
         </ul>
         <P>
-          Deskbeat is free and stays free. The licence is{" "}
+          Inlay is free and stays free. The licence is{" "}
           <ExternalLink href={`${REPO}/blob/main/LICENSE`}>MIT</ExternalLink>.
         </P>
       </Section>

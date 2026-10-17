@@ -7,12 +7,12 @@ const badgeVariants = cva(
   "inline-flex w-fit shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[0.8125rem] leading-none font-bold whitespace-nowrap",
   {
     variants: {
-      // A pill, sentence case. Text on the faint fill is ink, never accent: accent on
-      // faint is 4.2:1 in light and does not pass.
+      // A pill, sentence case. Orange text is always --orange-text, never the
+      // #FF6B2C fill, which is 2.5:1 on Bone.
       variant: {
         default: "bg-primary text-primary-foreground",
         outline: "bg-faint text-foreground",
-        solid: "bg-accent-soft text-primary",
+        solid: "bg-accent-soft text-primary-text",
       },
     },
     defaultVariants: { variant: "outline" },

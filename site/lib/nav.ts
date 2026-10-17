@@ -10,7 +10,7 @@ export const NAV: NavGroup[] = [
   {
     label: "Start here",
     items: [
-      { id: "overview", label: "What Deskbeat is" },
+      { id: "overview", label: "What Inlay is" },
       { id: "install", label: "Download and install" },
       { id: "using", label: "Using it" },
       { id: "edit-layout", label: "Edit layout" },
@@ -69,5 +69,5 @@ export const SOCIAL_IMAGE = {
   url: "/social-preview.png",
   width: 1280,
   height: 640,
-  alt: "Deskbeat: desktop widgets for Spotify on Windows 11. A spectrum visualizer, synced lyrics, a clock and a now-playing player.",
+  alt: "Inlay: live widgets, set into your Windows desktop. A clock, a spectrum visualizer, synced lyrics and a now-playing player.",
 };

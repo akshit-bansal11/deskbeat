@@ -13,7 +13,7 @@ export function SiteFooter() {
         <div>
           <p className="flex items-center gap-2 text-lg font-black">
             <Mark className="size-6" />
-            Deskbeat
+            Inlay
           </p>
           <p className="text-dim mt-1">
             MIT licensed. Not affiliated with or endorsed by Spotify.

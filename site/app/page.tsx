@@ -12,15 +12,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { DemoFigure } from "@/components/demo-figure";
 import { GithubMark } from "@/components/icons/github";
+import { Mark } from "@/components/mark";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { AnimatedShinyText } from "@/components/ui/animated-shiny-text";
 import { Badge } from "@/components/ui/badge";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GridPattern } from "@/components/ui/grid-pattern";
-import { MagicCard } from "@/components/ui/magic-card";
 import { LATEST_RELEASE, REPO } from "@/lib/nav";
 
 export const metadata: Metadata = {
@@ -29,16 +28,21 @@ export const metadata: Metadata = {
 
 const FACTS: { term: string; value: string }[] = [
   { term: "Runs on", value: "Windows 11" },
-  { term: "Needs", value: "The Spotify desktop app" },
+  { term: "Music widgets follow", value: "The Spotify desktop app" },
   { term: "Built with", value: "Rust and Direct2D" },
   { term: "Install", value: "One exe, no installer" },
 ];
 
 const WIDGETS: { title: string; Icon: LucideIcon; body: string }[] = [
   {
+    title: "Clock",
+    Icon: Clock3,
+    body: "Day, time and date, each of which can be hidden, restyled or given a format of its own. It works on its own, with or without Spotify.",
+  },
+  {
     title: "Visualizer",
     Icon: AudioLines,
-    body: "A spectrum of Spotify's audio only, not your games or calls. Bars, mirrored bars or a wave, and it can span the whole width of the screen.",
+    body: "A spectrum of whatever Spotify plays, and only that: not your games or calls. Bars, mirrored bars or a wave, and it can span the whole width of the screen.",
   },
   {
     title: "Lyrics",
@@ -49,11 +53,6 @@ const WIDGETS: { title: string; Icon: LucideIcon; body: string }[] = [
     title: "Player",
     Icon: Disc3,
     body: "Album art, title, artist, a progress bar you can click to seek, and previous, play/pause and next.",
-  },
-  {
-    title: "Clock",
-    Icon: Clock3,
-    body: "Day, time and date, each of which can be hidden, restyled or given a format of its own.",
   },
   {
     title: "Edit layout",
@@ -69,16 +68,16 @@ const WIDGETS: { title: string; Icon: LucideIcon; body: string }[] = [
 
 const STEPS: { title: string; body: string }[] = [
   {
+    title: "It draws only what changed",
+    body: "Each widget is compiled, sleeps until something it shows has changed, and is not drawn at all while it is covered. The clock wakes once a minute, lyrics at the next line, the player once a second.",
+  },
+  {
     title: "Windows says what is playing",
     body: "The track, its position, the album art and the play, pause and skip buttons come from the Windows media session API, filtered to Spotify. There is no Spotify Web API, no client ID and no OAuth, so it works on free accounts and needs no setup.",
   },
   {
     title: "It listens to Spotify alone",
     body: "The visualizer captures Spotify's own output through WASAPI process loopback, so it moves to the music and not to a game or a call. The audio is turned into bar heights and discarded; nothing is recorded or written to disk.",
-  },
-  {
-    title: "It draws only what changed",
-    body: "Each widget is compiled, sleeps until something it shows has changed, and is not drawn at all while it is covered. The clock wakes once a minute, lyrics at the next line, the player once a second.",
   },
 ];
 
@@ -90,7 +89,7 @@ const LIGHT: string[] = [
 ];
 
 const LIMITS: string[] = [
-  "It needs Windows 11 and the Spotify desktop app playing on the same PC. Playback sent to another device through Spotify Connect is not seen.",
+  "It needs Windows 11. The visualizer, lyrics and player need the Spotify desktop app playing on the same PC: playback sent to another device through Spotify Connect is not seen.",
   "The exe is not code-signed, so Windows SmartScreen warns the first time you run it.",
   "Word timing depends on community-run LyricsPlus servers. When none answers, lyrics fall back to line timing from LRCLIB.",
   "Memory use measured about 54 MB, above the 40 MB this was aiming for.",
@@ -98,10 +97,10 @@ const LIMITS: string[] = [
 ];
 
 const INSTALL: string[] = [
-  "Download Deskbeat-<version>.exe from the latest release. There is no installer.",
+  "Download Inlay-<version>.exe from the latest release. There is no installer.",
   "Run it. SmartScreen asks first: More info, then Run anyway.",
   "It lives in the notification area. Double-click its icon for settings, or right-click it for a small menu.",
-  "Play something in the Spotify desktop app.",
+  "The clock shows at once. For the other three, play something in the Spotify desktop app.",
 ];
 
 /** A section's heading block: a short accent eyebrow, a 900 title, a dim lede. */
@@ -116,7 +115,7 @@ function Heading({
 }) {
   return (
     <BlurFade>
-      <p className="text-primary text-[0.9375rem] font-bold">{eyebrow}</p>
+      <p className="text-primary-text text-[0.9375rem] font-bold">{eyebrow}</p>
       <h2 className="mt-2 max-w-[20ch] text-[2rem] leading-[1.08] font-black tracking-[-0.02em] md:text-5xl">
         {title}
       </h2>
@@ -134,7 +133,7 @@ function MoreLink({ href, children }: { href: string; children: React.ReactNode 
   return (
     <Link
       href={href}
-      className="text-primary inline-flex min-h-11 items-center gap-1.5 rounded-lg text-[0.9375rem] font-bold hover:underline hover:underline-offset-4"
+      className="text-primary-text inline-flex min-h-11 items-center gap-1.5 rounded-lg text-[0.9375rem] font-bold hover:underline hover:underline-offset-4"
     >
       {children}
       <ArrowRight aria-hidden className="size-4" />
@@ -150,30 +149,33 @@ export default function Page() {
       <SiteHeader />
 
       <main id="main" className="scroll-mt-16">
-        {/* Hero, on a faint grid that fades out towards the edges */}
+        {/* Hero, on a faint flat grid */}
         <section className="relative overflow-hidden">
           <GridPattern
             width={35}
             height={35}
-            className="fill-transparent stroke-line [mask-image:radial-gradient(ellipse_70%_60%_at_60%_30%,black,transparent)]"
+            className="fill-transparent stroke-line/50 dark:stroke-line/40"
           />
           <div className="relative mx-auto grid max-w-[80rem] gap-14 px-4 pt-12 pb-16 md:px-6 md:pt-20 md:pb-24 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center lg:gap-14">
             {/* No entrance on the headline: it is the largest paint on the page, and a
                 fade would leave it invisible until the JavaScript arrives. */}
             <div>
-              <p className="bg-card shadow-card inline-flex rounded-full px-4 py-1.5 text-sm font-bold">
-                <AnimatedShinyText>
-                  Spotify · Windows 11 · one native app
-                </AnimatedShinyText>
+              <p className="bg-card shadow-card text-dim inline-flex rounded-full px-4 py-1.5 text-sm font-bold">
+                Windows 11 · four live widgets · one native app
               </p>
-              <h1 className="mt-6 max-w-[13ch] text-[2.75rem] leading-[1.02] font-black tracking-[-0.025em] sm:text-6xl lg:text-7xl">
-                Your music, on the desktop itself.
+              <h1 className="mt-6 max-w-[15ch] text-[2.75rem] text-balance leading-[1.02] font-black tracking-[-0.025em] sm:text-6xl lg:text-7xl">
+                Live widgets, set into your Windows desktop.
               </h1>
               <p className="text-dim mt-6 max-w-[56ch] text-lg leading-relaxed md:text-xl">
-                Deskbeat draws four widgets on the Windows 11 desktop for whatever
-                Spotify is playing: a spectrum visualizer, synced lyrics, a clock and a
-                now-playing player. It is built as a light alternative to a Rainmeter
-                setup.
+                Inlay draws a clock, a spectrum visualizer, time-synced lyrics and a
+                now-playing player on the Windows 11 desktop, behind your icons. Each
+                one redraws only when something on it changes, so it idles near zero. A
+                light alternative to Rainmeter.
+              </p>
+              <p className="text-dim mt-4 max-w-[56ch] text-base leading-relaxed md:text-lg">
+                The clock runs on its own. The other three follow whatever Spotify
+                plays: track details come from Windows itself, so there is no Spotify
+                login and no client ID.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -236,7 +238,8 @@ export default function Page() {
         {/* What you get */}
         <section id="widgets" className={SECTION}>
           <Heading eyebrow="What you get" title="Four widgets, and no skin engine.">
-            There are no plugins, no scripts and no user-authored skins. Every visual
+            A clock that stands on its own, and three widgets that follow the music.
+            There are no plugins, no scripts and no user-authored skins: every visual
             and behavioural parameter of the four widgets is a setting instead.
           </Heading>
 
@@ -244,9 +247,9 @@ export default function Page() {
             {WIDGETS.map(({ title, Icon, body }, index) => (
               <li key={title}>
                 <BlurFade delay={(index % 3) * 0.05} className="h-full">
-                  <MagicCard className="shadow-card h-full rounded-[var(--radius-panel)]">
+                  <div className="bg-card shadow-card border-line hover:border-primary-text h-full rounded-[var(--radius-panel)] border transition-colors motion-reduce:transition-none">
                     <div className="p-6">
-                      <span className="bg-accent-soft text-primary grid size-11 place-items-center rounded-xl">
+                      <span className="bg-accent-soft text-primary-text grid size-11 place-items-center rounded-xl">
                         <Icon aria-hidden className="size-5" />
                       </span>
                       <h3 className="mt-4 text-lg font-bold">{title}</h3>
@@ -254,7 +257,7 @@ export default function Page() {
                         {body}
                       </p>
                     </div>
-                  </MagicCard>
+                  </div>
                 </BlurFade>
               </li>
             ))}
@@ -268,10 +271,10 @@ export default function Page() {
         <section id="how" className={SECTION}>
           <Heading
             eyebrow="How it works"
-            title="One process that sleeps until the song moves."
+            title="One process that sleeps until something changes."
           >
             A Rainmeter setup re-runs interpreted measures on timers and redraws whether
-            or not anything changed. The reason Deskbeat exists is that cost.
+            or not anything changed. The reason Inlay exists is that cost.
           </Heading>
 
           <ol className="mt-10 grid gap-4 md:grid-cols-3">
@@ -349,14 +352,12 @@ export default function Page() {
           <BlurFade delay={0.05} className="mt-10">
             <Card className="max-w-[44rem]">
               <CardHeader className="flex items-center gap-4 px-6">
-                <span className="bg-accent-soft text-primary grid size-12 shrink-0 place-items-center rounded-2xl">
-                  <AudioLines aria-hidden className="size-6" />
-                </span>
+                <Mark className="size-12 shrink-0" />
                 <div className="min-w-0">
-                  <CardTitle className="text-xl font-black">Deskbeat</CardTitle>
+                  <CardTitle className="text-xl font-black">Inlay</CardTitle>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <Badge variant="solid">Windows 11</Badge>
-                    <Badge variant="outline">Deskbeat-x.y.z.exe</Badge>
+                    <Badge variant="outline">Inlay-x.y.z.exe</Badge>
                   </div>
                 </div>
               </CardHeader>
@@ -364,7 +365,7 @@ export default function Page() {
                 <ol className="divide-line divide-y">
                   {INSTALL.map((step, stepIndex) => (
                     <li key={step} className="flex gap-3 py-3 first:pt-0 last:pb-0">
-                      <span className="text-primary w-4 shrink-0 text-[0.9375rem] font-black">
+                      <span className="text-primary-text w-4 shrink-0 text-[0.9375rem] font-black">
                         {stepIndex + 1}
                       </span>
                       <span className="text-dim text-[0.9375rem] leading-relaxed">

@@ -79,9 +79,9 @@ const MODEL: { title: string; body: React.ReactNode }[] = [
     title: "It runs as you, with no elevation",
     body: (
       <>
-        It writes only its own folders, <C>%APPDATA%\deskbeat</C> and{" "}
-        <C>%LOCALAPPDATA%\deskbeat</C>, and one value under <C>HKCU\...\Run</C> when
-        Start with Windows is on.
+        It writes only its own folders, <C>%APPDATA%\inlay</C> and{" "}
+        <C>%LOCALAPPDATA%\inlay</C>, and one value, <C>Inlay</C>, under{" "}
+        <C>HKCU\...\Run</C> when Start with Windows is on.
       </>
     ),
   },
@@ -157,7 +157,7 @@ export function InternalsSections() {
 
         <Sub>The cache</Sub>
         <P>
-          Both answers are cached on disk, in <C>%LOCALAPPDATA%\deskbeat</C>. A miss is
+          Both answers are cached on disk, in <C>%LOCALAPPDATA%\inlay</C>. A miss is
           remembered for a week. A server that is down is not remembered as a miss, so
           the track is asked for again next time.
         </P>
@@ -294,7 +294,7 @@ export function InternalsSections() {
         title="Privacy and security"
         lede={
           <>
-            Deskbeat draws on your desktop, listens to what Spotify plays and asks the
+            Inlay draws on your desktop, listens to what Spotify plays and asks the
             internet for lyrics. This is what it touches and what leaves the PC.
           </>
         }
@@ -321,14 +321,14 @@ export function InternalsSections() {
             <C>gh attestation verify</C>.
           </li>
           <li>
-            Anyone who can write <C>%APPDATA%\deskbeat\config.toml</C> can point{" "}
+            Anyone who can write <C>%APPDATA%\inlay\config.toml</C> can point{" "}
             <C>word_servers</C> at a server of their choosing and learn what you play.
             That person can already run programs as you.
           </li>
           <li>
-            Fonts in <C>%APPDATA%\deskbeat\fonts</C> are loaded by DirectWrite. A
-            malicious font file is a risk for any program that renders it; only put
-            fonts there that you trust.
+            Fonts in <C>%APPDATA%\inlay\fonts</C> are loaded by DirectWrite. A malicious
+            font file is a risk for any program that renders it; only put fonts there
+            that you trust.
           </li>
         </ul>
 

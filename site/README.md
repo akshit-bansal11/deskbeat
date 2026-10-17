@@ -1,12 +1,12 @@
-# Deskbeat website
+# Inlay website
 
 Two routes: a landing page at `/`, and the whole documentation on one page at `/docs`.
 
-**Live at [deskbeat.akshitbansal.dev](https://deskbeat.akshitbansal.dev).** Deployed to Vercel from the repository root; see *Hosting* below.
+**Live at [deskbeat.akshitbansal.dev](https://deskbeat.akshitbansal.dev).** The domain keeps the old name, Deskbeat, until it is moved. Deployed to Vercel from the repository root; see *Hosting* below.
 
 It is **not** part of the app's quality gate: `scripts/check.ps1` checks only the Rust workspace. The site's own gate and build run in `.github/workflows/site.yml` on every push and pull request that touches `site/`.
 
-The layout, type scale, components and motion are those of Edgepad's site, copied and re-coloured. Only the words and the palette are Deskbeat's.
+The layout, type scale, components and motion are those of Edgepad's site, copied and re-coloured. Only the words and the palette are Inlay's.
 
 ## Running it
 
@@ -61,7 +61,7 @@ app/
   page.tsx            the landing page: hero, widgets, how it works, limits, get it
   docs/page.tsx       the documentation: sidebar layout, composes the four section files
   globals.css         the palette and the two font variables
-  icon.svg            the favicon: the mark, switching with the browser's colour scheme
+  icon.svg            the favicon: the mark, in its fixed brand colours
   robots.ts, sitemap.ts   written to robots.txt and sitemap.xml at build
 lib/
   nav.ts              the table of contents; every id must exist as a section anchor
@@ -73,7 +73,7 @@ components/
   toc.tsx             sidebar with an IntersectionObserver scroll-spy
   flow-diagram.tsx    the two-crate architecture map
   demo-figure.tsx     the hero recording, and its still frame for reduced motion
-  mark.tsx            the logo, inline, following the theme toggle
+  mark.tsx            the logo, inline, in its fixed brand colours
   site-header.tsx     shared; `variant` picks the landing menu or the table of contents
   site-footer.tsx     shared
 public/
@@ -84,15 +84,15 @@ public/
 
 ## Design notes
 
-Calm, rounded, three colours.
+Calm, rounded, flat. No gradients anywhere: not on a fill, a border, a hover or a mask.
 
-**Palette.** Ink `#131316`, Paper `#F5F4F0` and one accent, Ember: `#CC3510` on Paper, `#FF6B45` on Ink. Light is Paper with Ink text; dark is Ink with Paper text. The neutral tints the layout needs (card, line, faint, dim, accent-soft) are mixes of those three, and the mixes are written out in `app/globals.css` next to the contrast ratio of every text pair, each computed at 4.5:1 or better. The one pair that fails, accent on `faint` in light, is named there so nobody sets text in it. The values are mapped onto shadcn's CSS variables, so components installed with the CLI pick them up. Ember is kept for primary actions, links, selection and live things.
+**Palette.** Ink `#15151C`, Bone `#F3EFE6` and one accent, Orange `#FF6B2C`. Light is Bone with Ink text; dark is Ink with Bone text. Orange is the fill in both themes (buttons, the filled badge, step numbers, selection), always with Ink on it. As text it is too weak on Bone (2.5:1), so orange text, links, icons and the focus ring use `--orange-text`: `#B33A0B` in light, `#FF6B2C` itself in dark. In classes that is `bg-primary` for the fill and `text-primary-text` for the letters. The neutral tints the layout needs (card, line, faint, dim, accent-soft) are mixes of Ink, Bone and Orange, and the mixes are written out in `app/globals.css` next to the contrast ratio of every text pair, each computed at 4.5:1 or better. The values are mapped onto shadcn's CSS variables, so components installed with the CLI pick them up. Cobalt `#3355FF` and Sun `#FFC93C` belong to the mark and are not used on the page.
 
-**The mark.** A sun coming up off a desk, its rays a spectrum, on a tile, flat colours: `assets/deskbeat-light.svg` for light pages, `assets/deskbeat-dark.svg` for dark ones. `components/mark.tsx` is the same drawing inline, coloured from the CSS variables, so it follows the theme toggle and not only the OS.
+**The mark.** Four flat pieces set into one tile, one for each widget: `assets/inlay.svg`. `components/mark.tsx` and `app/icon.svg` are the same drawing, in fixed brand colours that do not follow the theme.
 
 **Type.** Lato in 400, 700 and 900, sentence case everywhere, no letter-spaced capitals. JetBrains Mono only for what really is code: commands, config keys, file paths. Both are downloaded by `next/font` at build and served from this origin.
 
-**Motion.** Magic UI's BlurFade for section entrances (a short lift and unblur, once), a BorderBeam around the hero recording and a shine on the hero pill. Under `prefers-reduced-motion` all of them stop, **in CSS** (`motion-reduce:` utilities), never with `useReducedMotion`: the server cannot know the preference, so a hook renders different markup on the client, and React does not repair a mismatched `style` on hydration. The hero recording is a GIF, which cannot be paused, so under the same preference its first frame is shown instead. The hero headline and the docs title have no entrance at all, so the first paint never waits for JavaScript.
+**Motion.** Magic UI's BlurFade for section entrances (a short lift and unblur, once), and a border that turns orange under the pointer on the widget cards. The BorderBeam, the shine on the hero pill and MagicCard's spotlight were taken out because each is a gradient; their files in `components/ui/` are no longer imported. Under `prefers-reduced-motion` the entrances stop, **in CSS** (`motion-reduce:` utilities), never with `useReducedMotion`: the server cannot know the preference, so a hook renders different markup on the client, and React does not repair a mismatched `style` on hydration. The hero recording is a GIF, which cannot be paused, so under the same preference its first frame is shown instead. The hero headline and the docs title have no entrance at all, so the first paint never waits for JavaScript.
 
 **Theme toggle.** `next-themes` with `attribute="class"`, three states (light / dark / system). The dark variant follows the class rather than the media query, so the toggle wins over the OS in both directions.
 
@@ -111,7 +111,7 @@ Everything on both pages traces to something in this repository:
 
 | Section | Source |
 | --- | --- |
-| What Deskbeat is, install, using it, edit layout, troubleshooting | `README.md` |
+| What Inlay is, install, using it, edit layout, troubleshooting | `README.md` |
 | Settings | `README.md`, and the rows of `crates/app/src/settings.rs` |
 | `config.toml` keys, defaults and clamps | `crates/core/src/config.rs` |
 | Clock formats | `crates/core/src/timefmt.rs` |
@@ -128,13 +128,13 @@ The tables on `/docs` are typed by hand from those files, not generated from the
 
 ## Hosting
 
-Live at [deskbeat.akshitbansal.dev](https://deskbeat.akshitbansal.dev), on Vercel, in a project named `deskbeat`. `cleanUrls` in the root `vercel.json` is what makes `/docs` serve `docs.html` from the export.
+Live at [deskbeat.akshitbansal.dev](https://deskbeat.akshitbansal.dev), on Vercel, in a project named `deskbeat`. Both keep the old name until the owner moves them. `cleanUrls` in the root `vercel.json` is what makes `/docs` serve `docs.html` from the export.
 
 The site is a **static export** (`output: "export"` in `next.config.ts`): every page is prerendered and nothing is read at request time, so it ships as plain files with no Next.js runtime and no serverless functions.
 
 It deploys from the **repository root**, not from `site/`, so the one `vercel.json` there can run the build inside `site/` and point Vercel at `site/out`. `.vercelignore` keeps the app's source out of the upload.
 
-**Response headers** come from `vercel.json` too, since a static export has no server of its own to send them: a Content-Security-Policy, `nosniff`, a referrer policy and a Permissions-Policy that switches off the device APIs the site never asks for. The CSP allows only this origin for everything, and nothing may frame the site. Two parts of it are loose on purpose. `script-src` allows `'unsafe-inline'` because the export carries inline scripts (next-themes' no-flash theme script and the React Server Components payload) whose content changes with every edit to a page, so hashes would have to be regenerated on every build and a nonce needs a server. `style-src` allows it because React writes `style` attributes (the entrance animations, the beam, Radix's accordion heights). No script comes from anywhere but this origin, and the site fetches nothing from any other. A new external resource (a font, an embed, an analytics script) has to be added to the policy or the browser will block it.
+**Response headers** come from `vercel.json` too, since a static export has no server of its own to send them: a Content-Security-Policy, `nosniff`, a referrer policy and a Permissions-Policy that switches off the device APIs the site never asks for. The CSP allows only this origin for everything, and nothing may frame the site. Two parts of it are loose on purpose. `script-src` allows `'unsafe-inline'` because the export carries inline scripts (next-themes' no-flash theme script and the React Server Components payload) whose content changes with every edit to a page, so hashes would have to be regenerated on every build and a nonce needs a server. `style-src` allows it because React writes `style` attributes (the entrance animations, Radix's accordion heights). No script comes from anywhere but this origin, and the site fetches nothing from any other. A new external resource (a font, an embed, an analytics script) has to be added to the policy or the browser will block it.
 
 ```bash
 vercel deploy --prod     # from the repository root

@@ -53,7 +53,7 @@ export function ThemeToggle() {
               "text-dim relative grid size-11 cursor-pointer place-items-center rounded-full transition-colors",
               "hover:text-foreground",
               "has-[:focus-visible]:outline-ring has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2",
-              active && "bg-card text-primary shadow-card hover:text-primary",
+              active && "bg-card text-primary-text shadow-card hover:text-primary-text",
             )}
           >
             <input

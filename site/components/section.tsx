@@ -23,12 +23,12 @@ export function Section({
       <BlurFade>
         <header className="mb-6">
           {eyebrow ? (
-            <p className="text-primary mb-2 text-sm font-bold">{eyebrow}</p>
+            <p className="text-primary-text mb-2 text-sm font-bold">{eyebrow}</p>
           ) : null}
           <h2 className="text-[1.75rem] leading-tight font-black tracking-[-0.01em] md:text-[2rem]">
             <a
               href={`#${id}`}
-              className="decoration-primary rounded-sm underline-offset-4 hover:underline"
+              className="decoration-primary-text rounded-sm underline-offset-4 hover:underline"
             >
               {title}
             </a>
@@ -92,7 +92,7 @@ export function ExternalLink({
       href={href}
       target="_blank"
       rel="noreferrer noopener"
-      className="text-primary decoration-primary/40 hover:decoration-primary rounded-sm font-bold underline underline-offset-4"
+      className="text-primary-text decoration-primary-text/40 hover:decoration-primary-text rounded-sm font-bold underline underline-offset-4"
     >
       {children}
     </a>

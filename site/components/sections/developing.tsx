@@ -107,8 +107,8 @@ export function DevelopingSections() {
       >
         <CodeBlock
           title="Clone your fork"
-          code={`git clone https://github.com/<you>/deskbeat.git
-cd deskbeat
+          code={`git clone https://github.com/<you>/deskbeat.git inlay
+cd inlay
 git remote add upstream https://github.com/akshit-bansal11/deskbeat.git`}
           caption="The upstream remote is there to pull in later changes."
         />
@@ -238,10 +238,10 @@ pwsh scripts/check.ps1 -Ci    # what CI runs: fails on unformatted code instead 
           field, the tray icon&apos;s pixels.
         </P>
         <P>
-          <C>deskbeat.exe --snapshot &lt;dir&gt;</C> renders every widget and the
-          settings panel to PNG from made-up data, with no GPU, Spotify or audio device.
-          CI runs it on every push. It proves the drawing code runs and lets a change be
-          looked at; it does not exercise the app loop, a pointer, or a live session.
+          <C>inlay.exe --snapshot &lt;dir&gt;</C> renders every widget and the settings
+          panel to PNG from made-up data, with no GPU, Spotify or audio device. CI runs
+          it on every push. It proves the drawing code runs and lets a change be looked
+          at; it does not exercise the app loop, a pointer, or a live session.
         </P>
       </Section>
 
@@ -251,16 +251,15 @@ pwsh scripts/check.ps1 -Ci    # what CI runs: fails on unformatted code instead 
         title="Contributing"
         lede={
           <>
-            Deskbeat is small on purpose; the bar for a change is that it makes the
-            product better for someone using it, and that it passes the same gate CI
-            runs.
+            Inlay is small on purpose; the bar for a change is that it makes the product
+            better for someone using it, and that it passes the same gate CI runs.
           </>
         }
       >
         <ul className="text-dim max-w-[68ch] list-disc space-y-2 pl-5 text-[0.9375rem] leading-relaxed">
           <li>
             <strong className="text-foreground">
-              A bug, or something Deskbeat should do:
+              A bug, or something Inlay should do:
             </strong>{" "}
             <ExternalLink href={`${REPO}/issues/new/choose`}>
               open an issue
@@ -311,7 +310,7 @@ pwsh scripts/check.ps1 -Ci    # what CI runs: fails on unformatted code instead 
         <P>
           Pushing a <C>v*</C> tag runs the release workflow: the gate again, a release
           build, a check that the tag matches the crate version, the snapshot smoke
-          test, then a GitHub Release carrying <C>Deskbeat-&lt;version&gt;.exe</C>,{" "}
+          test, then a GitHub Release carrying <C>Inlay-&lt;version&gt;.exe</C>,{" "}
           <C>SHA256SUMS.txt</C> and a build provenance attestation, with notes taken
           from that version&apos;s section of <C>CHANGELOG.md</C>.
         </P>

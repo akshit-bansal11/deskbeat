@@ -1,8 +1,8 @@
 {
-  "name": "deskbeat-site",
+  "name": "inlay-site",
   "version": "0.1.0",
   "private": true,
-  "description": "Website and documentation for Deskbeat.",
+  "description": "Website and documentation for Inlay.",
   "engines": {
     "node": ">=24"
   },
