@@ -107,6 +107,8 @@ pub struct Gfx {
     factory: ID2D1Factory1,
     dwrite: IDWriteFactory,
     brush: ID2D1SolidColorBrush,
+    /// Round ends, for `fill_capsule`.
+    round: ID2D1StrokeStyle,
     formats: HashMap<(String, u32, u32), IDWriteTextFormat>,
     /// Fonts from the app's own `fonts` folder, if it holds any.
     fonts: Option<IDWriteFontCollection>,
@@ -261,6 +263,16 @@ impl Gfx {
             let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
             Ok(Self {
                 brush: rt.CreateSolidColorBrush(&color([1.0; 4]), None)?,
+                round: factory
+                    .CreateStrokeStyle(
+                        &D2D1_STROKE_STYLE_PROPERTIES1 {
+                            startCap: D2D1_CAP_STYLE_ROUND,
+                            endCap: D2D1_CAP_STYLE_ROUND,
+                            ..Default::default()
+                        },
+                        None,
+                    )?
+                    .cast()?,
                 fonts: load_fonts(&dwrite),
                 dwrite,
                 formats: HashMap::new(),
@@ -483,6 +495,38 @@ impl Gfx {
             radiusY: radius,
         };
         unsafe { self.rt.FillEllipse(&ellipse, self.solid(c)) };
+    }
+
+    /// A bar `width` across with round ends, between the centres of its ends.
+    pub fn fill_capsule(&self, from: (f32, f32), to: (f32, f32), width: f32, c: Rgba) {
+        let (from, to) = (point(from.0, from.1), point(to.0, to.1));
+        unsafe {
+            self.rt
+                .DrawLine(from, to, self.solid(c), width, &self.round)
+        };
+    }
+
+    /// The top half of a disc, standing on its flat side.
+    pub fn fill_dome(&self, x: f32, y: f32, radius: f32, c: Rgba) -> Result<()> {
+        unsafe {
+            let geometry = self.factory.CreatePathGeometry()?;
+            let sink = geometry.Open()?;
+            sink.BeginFigure(point(x - radius, y), D2D1_FIGURE_BEGIN_FILLED);
+            sink.AddArc(&D2D1_ARC_SEGMENT {
+                point: point(x + radius, y),
+                size: D2D_SIZE_F {
+                    width: radius,
+                    height: radius,
+                },
+                rotationAngle: 0.0,
+                sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                arcSize: D2D1_ARC_SIZE_SMALL,
+            });
+            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+            sink.Close()?;
+            self.rt.FillGeometry(&geometry, self.solid(c), None);
+        }
+        Ok(())
     }
 
     /// A horizontal gradient across `[x0, x1]`.

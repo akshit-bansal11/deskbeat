@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- The Deskbeat mark: four sound bars, centred like a waveform, whose heights fall away to draw the letter D. For light pages: an Ink tile, Paper bars, and the shortest bar in Ember. Flat colours, no gradient. -->
+<!-- The Deskbeat mark: a sun coming up off a desk, its five rays a spectrum caught mid-song. The desktop is the horizon and the music is what rises over it. For light pages: an Ink tile, a Paper desk and rays, and the sun in Ember. Flat colours, no gradient. The same numbers are in crates/core/src/mark.rs. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
   <rect width="108" height="108" rx="26" fill="#131316"/>
-  <rect x="21" y="19" width="13" height="70" rx="6.5" fill="#F5F4F0"/>
-  <rect x="39" y="22" width="13" height="64" rx="6.5" fill="#F5F4F0"/>
-  <rect x="57" y="29" width="13" height="50" rx="6.5" fill="#F5F4F0"/>
-  <rect x="75" y="41" width="13" height="26" rx="6.5" fill="#FF6B45"/>
+  <g fill="none" stroke="#F5F4F0" stroke-linecap="round">
+    <path d="M24 83H84" stroke-width="12"/>
+    <path d="M32.13 64.89 21.66 61.49 M40.48 53.39 28.73 37.21 M54 49 54 22 M67.52 53.39 80.45 35.59 M75.87 64.89 89.19 60.57" stroke-width="10"/>
+  </g>
+  <path d="M39 72a15 15 0 0 1 30 0z" fill="#FF6B45"/>
 </svg>

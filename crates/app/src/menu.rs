@@ -5,6 +5,7 @@
 
 use deskbeat_core::color::{Rgba, with_alpha};
 use deskbeat_core::config::Align;
+use deskbeat_core::mark;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -33,10 +34,6 @@ const NAME: &str = "Deskbeat";
 const VERSION: &str = concat!("Version ", env!("CARGO_PKG_VERSION"));
 const OPEN_GLYPH: &str = "\u{E8A7}";
 const ESCAPE: u32 = 27;
-
-/// The mark's bars in its 108-unit drawing: left edge and height. Each is 13
-/// wide and centred on the middle line, as in `assets/deskbeat-dark.svg`.
-const MARK_BARS: [(f32, f32); 4] = [(21.0, 70.0), (39.0, 64.0), (57.0, 50.0), (75.0, 26.0)];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pick {
@@ -92,20 +89,19 @@ fn text(
     Ok(())
 }
 
-/// The Deskbeat mark, `side` across, with its top-left corner at `(x, y)`.
-pub fn mark(g: &Gfx, x: f32, y: f32, side: f32) {
-    let unit = side / 108.0;
-    g.fill_round(rect(x, y, side, side), 26.0 * unit, PAPER);
-    for (i, (left, height)) in MARK_BARS.into_iter().enumerate() {
-        let color = if i == MARK_BARS.len() - 1 { EMBER } else { INK };
-        let bar = rect(
-            x + left * unit,
-            y + (54.0 - height / 2.0) * unit,
-            13.0 * unit,
-            height * unit,
-        );
-        g.fill_round(bar, 6.5 * unit, color);
+/// The Deskbeat mark, `side` across, with its top-left corner at `(x, y)`,
+/// as in `assets/deskbeat-dark.svg`.
+pub fn mark(g: &Gfx, x: f32, y: f32, side: f32) -> Result<()> {
+    let unit = side / mark::SIDE;
+    let at = |(px, py): (f32, f32)| (x + px * unit, y + py * unit);
+    g.fill_round(rect(x, y, side, side), mark::CORNER * unit, PAPER);
+    let [from, to] = mark::DESK;
+    g.fill_capsule(at(from), at(to), mark::DESK_WIDTH * unit, INK);
+    for [from, to] in mark::rays() {
+        g.fill_capsule(at(from), at(to), mark::RAY_WIDTH * unit, INK);
     }
+    let (sx, sy) = at(mark::SUN);
+    g.fill_dome(sx, sy, mark::SUN_RADIUS * unit, EMBER)
 }
 
 /// Paints the card at the origin, `WIDTH` by `HEIGHT`. `mouse` is the pointer
@@ -121,7 +117,7 @@ pub fn paint(g: &mut Gfx, mouse: (f32, f32), autostart: bool) -> Result<()> {
 
     let side = 32.0;
     let left = PAD + 10.0;
-    mark(g, left, PAD + (HEADER - side) / 2.0, side);
+    mark(g, left, PAD + (HEADER - side) / 2.0, side)?;
     let beside = left + side + 12.0;
     let line = rect(beside, PAD + 9.0, WIDTH - beside - PAD, 20.0);
     text(g, NAME, line, (FONT, 15.0, 600), Align::Left, PAPER)?;

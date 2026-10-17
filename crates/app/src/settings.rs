@@ -341,7 +341,7 @@ impl View {
         let mut turned_to = None;
 
         // The sidebar: the mark, the tabs, and the two things that leave the panel.
-        mark(ui.g, 20.0, 22.0, 28.0);
+        mark(ui.g, 20.0, 22.0, 28.0)?;
         let name = rect(58.0, 22.0, SIDEBAR - 66.0, 28.0);
         ui.text("Deskbeat", name, 15.0, 600, Align::Left, TEXT)?;
         for (i, name) in TABS.iter().enumerate() {

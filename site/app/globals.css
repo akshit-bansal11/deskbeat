@@ -34,8 +34,8 @@
   unchanged. Note that shadcn's `accent` is its hover surface; Ember is `primary`
   here, and `destructive` is Ember too, because there is no fourth colour.
 
-  --mark-beat is the shortest bar of the logo. The mark's tile is the page's ink, so
-  that bar sits on the opposite ground and takes the opposite theme's Ember.
+  --mark-beat is the logo's sun. The mark's tile is the page's ink, so the sun
+  sits on the opposite ground and takes the opposite theme's Ember.
 */
 :root {
   --ground: #f5f4f0;

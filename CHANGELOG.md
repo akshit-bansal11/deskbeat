@@ -9,6 +9,10 @@ uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - The website moved to https://deskbeat.akshitbansal.dev.
+- A new mark: a sun coming up off a desk, its five rays a spectrum caught
+  mid-song. The tray icon, the exe's icon, the tray menu, the settings panel,
+  the website and the social preview all use it. Its geometry lives in one
+  place, `crates/core/src/mark.rs`.
 
 ## [1.4.0] - 2026-10-10
 

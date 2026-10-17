@@ -88,7 +88,7 @@ Calm, rounded, three colours.
 
 **Palette.** Ink `#131316`, Paper `#F5F4F0` and one accent, Ember: `#CC3510` on Paper, `#FF6B45` on Ink. Light is Paper with Ink text; dark is Ink with Paper text. The neutral tints the layout needs (card, line, faint, dim, accent-soft) are mixes of those three, and the mixes are written out in `app/globals.css` next to the contrast ratio of every text pair, each computed at 4.5:1 or better. The one pair that fails, accent on `faint` in light, is named there so nobody sets text in it. The values are mapped onto shadcn's CSS variables, so components installed with the CLI pick them up. Ember is kept for primary actions, links, selection and live things.
 
-**The mark.** Four bars on a tile, flat colours: `assets/deskbeat-light.svg` for light pages, `assets/deskbeat-dark.svg` for dark ones. `components/mark.tsx` is the same drawing inline, coloured from the CSS variables, so it follows the theme toggle and not only the OS.
+**The mark.** A sun coming up off a desk, its rays a spectrum, on a tile, flat colours: `assets/deskbeat-light.svg` for light pages, `assets/deskbeat-dark.svg` for dark ones. `components/mark.tsx` is the same drawing inline, coloured from the CSS variables, so it follows the theme toggle and not only the OS.
 
 **Type.** Lato in 400, 700 and 900, sentence case everywhere, no letter-spaced capitals. JetBrains Mono only for what really is code: commands, config keys, file paths. Both are downloaded by `next/font` at build and served from this origin.
 
